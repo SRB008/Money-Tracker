@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expenses</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="fatal-error" class="hidden" style="max-width:600px;margin:60px auto;padding:20px;border:1px solid #d03b3b;border-radius:8px;color:#d03b3b;font-family:system-ui,sans-serif;"></div>
+
+<div id="app-view" class="wrap hidden">
+  <header class="app-header">
+    <div class="header-title">
+      <h1>Expenses</h1>
+      <nav class="page-nav"><a href="index.html">Investments</a></nav>
+    </div>
+    <div class="user-bar">
+      <span id="user-email"></span>
+      <button id="signout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>Next 8 days</h2>
+    <div class="expense-list-header">
+      <span class="expense-date"></span>
+      <span class="expense-name"></span>
+      <span class="expense-amount">Amount</span>
+      <span class="expense-running-total">Running total</span>
+    </div>
+    <div class="expense-list" id="next8-list"></div>
+    <div id="next8-empty" class="empty hidden">Nothing due in the next 8 days.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Expenses</h2>
+      <button type="button" class="primary" id="add-expense-btn">Add expense</button>
+    </div>
+    <div class="expense-list-header">
+      <span class="expense-date">Day</span>
+      <span class="expense-name"></span>
+      <span class="expense-amount">Amount</span>
+    </div>
+    <div class="expense-list" id="expenses-grid"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2 id="month-label"></h2>
+      <div class="month-nav">
+        <button type="button" id="month-prev">‹</button>
+        <button type="button" id="month-today">Today</button>
+        <button type="button" id="month-next">›</button>
+      </div>
+    </div>
+    <div class="expense-list" id="month-list"></div>
+    <div id="month-empty" class="empty hidden">No expenses this month.</div>
+    <div class="month-total" id="month-total"></div>
+  </div>
+
+</div>
+
+<div id="expense-modal" class="modal-overlay hidden">
+  <div class="modal card">
+    <h2>Add expense</h2>
+    <form id="expense-form">
+      <div class="field">
+        <label for="new-expense-name">Name</label>
+        <input id="new-expense-name" type="text" placeholder="e.g. Visa card" required>
+      </div>
+      <div class="field">
+        <label for="new-expense-frequency">Frequency</label>
+        <select id="new-expense-frequency" required>
+          <option value="Monthly">Monthly</option>
+          <option value="Weekly">Weekly</option>
+        </select>
+      </div>
+      <div class="field" id="field-day-monthly">
+        <label for="new-expense-day-monthly">Day of month</label>
+        <input id="new-expense-day-monthly" type="number" min="1" max="31" step="1" placeholder="e.g. 15">
+      </div>
+      <div class="field hidden" id="field-day-weekly">
+        <label for="new-expense-day-weekly">Day of week</label>
+        <select id="new-expense-day-weekly">
+          <option value="1">Monday</option>
+          <option value="2">Tuesday</option>
+          <option value="3">Wednesday</option>
+          <option value="4">Thursday</option>
+          <option value="5">Friday</option>
+          <option value="6">Saturday</option>
+          <option value="7">Sunday</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="new-expense-amount">Typical amount (£)</label>
+        <input id="new-expense-amount" type="number" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="expense-modal-cancel">Cancel</button>
+        <button type="submit" class="primary">Add expense</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  function showFatal(msg) {
+    var el = document.getElementById('fatal-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  window.addEventListener('error', function (e) {
+    showFatal('Something failed to load or run: ' + e.message + ' (' + (e.filename || '') + (e.lineno ? ':' + e.lineno : '') + ')');
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
+<script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
+<script src="expenses.js?v=3" onerror="showFatal('Failed to load expenses.js')"></script>
+</body>
+</html>
