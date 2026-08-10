@@ -25,6 +25,7 @@ let expenses = [];
 let occurrences = [];
 let debts = [];
 let debtValues = [];
+let drawdownRate = 4;
 
 // ---------- Auth ----------
 
@@ -105,6 +106,7 @@ async function loadAll() {
     { data: occs, error: occErr },
     { data: d, error: debtErr },
     { data: dv, error: debtValErr },
+    { data: setting, error: settingErr },
   ] = await Promise.all([
     sb.from('accounts').select('*').order('type').order('name'),
     sb.from('investment_values').select('*').order('date'),
@@ -112,6 +114,7 @@ async function loadAll() {
     sb.from('expense_occurrences').select('*'),
     sb.from('debts').select('*').order('name'),
     sb.from('debt_values').select('*').order('date'),
+    sb.from('app_settings').select('*').eq('key', 'pension_drawdown_rate').maybeSingle(),
   ]);
   if (accErr) return alert('Failed to load accounts: ' + accErr.message);
   if (valErr) return alert('Failed to load values: ' + valErr.message);
@@ -125,6 +128,7 @@ async function loadAll() {
   occurrences = occs || [];
   debts = d || [];
   debtValues = dv || [];
+  drawdownRate = (!settingErr && setting) ? Number(setting.value) : 4;
   renderAll();
 }
 
@@ -191,6 +195,20 @@ function renderStats() {
   const totalRow = document.getElementById('stat-row-total');
   totalRow.innerHTML = '';
   totalRow.appendChild(statTile('Total', fmtGBP(netTotal), true));
+
+  const netIncomePA = (totals.ISA + totals.Pension * 0.65 - totalDebt) * (drawdownRate / 100);
+  const netIncomePM = netIncomePA / 12;
+
+  const outlookRow = document.getElementById('stat-row-outlook');
+  outlookRow.innerHTML = '';
+  const incomeTile = document.createElement('div');
+  incomeTile.className = 'stat-tile';
+  incomeTile.innerHTML = `
+    <div class="label">Potential Net Income</div>
+    <div class="value">${fmtGBP(netIncomePA)} pa</div>
+    <div class="sub-value">${fmtGBP(netIncomePM)} pm&nbsp; |&nbsp; @${drawdownRate}%</div>
+  `;
+  outlookRow.appendChild(incomeTile);
 }
 function statTile(label, value, isTotal, extraClass) {
   const div = document.createElement('div');

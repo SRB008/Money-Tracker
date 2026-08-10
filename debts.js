@@ -63,8 +63,8 @@ function renderDebtsList() {
   for (const debt of debts) {
     const v = latest[debt.id];
     const details = [];
-    if (v && v.monthly_payment != null) details.push(`${fmtGBP(v.monthly_payment)}/mo`);
-    if (v && v.interest_rate != null) details.push(`${Number(v.interest_rate)}%`);
+    if (debt.monthly_payment != null) details.push(`${fmtGBP(debt.monthly_payment)}/mo`);
+    if (debt.interest_rate != null) details.push(`${Number(debt.interest_rate)}%`);
     const item = document.createElement('div');
     item.className = 'account-item editable';
     item.innerHTML = `
@@ -99,8 +99,6 @@ function renderDebtValueRows() {
     row.innerHTML = `
       <span class="name">${escapeHtml(debt.name)}</span>
       <input type="number" step="0.01" min="0" placeholder="0.00" class="dv-outstanding" data-debt-id="${debt.id}">
-      <input type="number" step="0.01" min="0" placeholder="0.00" class="dv-payment" data-debt-id="${debt.id}">
-      <input type="number" step="0.01" min="0" placeholder="0.0" class="dv-rate" data-debt-id="${debt.id}">
     `;
     container.appendChild(row);
   }
@@ -117,15 +115,10 @@ document.getElementById('save-debt-values-btn').addEventListener('click', async 
   const entries = [];
   container.querySelectorAll('.dv-outstanding').forEach(input => {
     if (input.value.trim() === '') return;
-    const debtId = input.dataset.debtId;
-    const payment = container.querySelector(`.dv-payment[data-debt-id="${debtId}"]`);
-    const rate = container.querySelector(`.dv-rate[data-debt-id="${debtId}"]`);
     entries.push({
-      debt_id: debtId,
+      debt_id: input.dataset.debtId,
       date,
       outstanding_amount: input.value,
-      monthly_payment: payment.value === '' ? null : payment.value,
-      interest_rate: rate.value === '' ? null : rate.value,
     });
   });
   if (entries.length === 0) { msg.textContent = 'Enter at least one outstanding amount.'; msg.className = 'msg error'; return; }
@@ -150,7 +143,11 @@ function openDebtModal(debt) {
   document.getElementById('debt-modal-title').textContent = debt ? 'Edit debt' : 'Add debt';
   document.getElementById('debt-modal-submit').textContent = debt ? 'Save changes' : 'Add debt';
   document.getElementById('debt-modal-delete').classList.toggle('hidden', !editingDebtId);
-  if (debt) document.getElementById('new-debt-name').value = debt.name;
+  if (debt) {
+    document.getElementById('new-debt-name').value = debt.name;
+    document.getElementById('new-debt-payment').value = debt.monthly_payment != null ? debt.monthly_payment : '';
+    document.getElementById('new-debt-rate').value = debt.interest_rate != null ? debt.interest_rate : '';
+  }
   debtModal.classList.remove('hidden');
   document.getElementById('new-debt-name').focus();
 }
@@ -178,13 +175,20 @@ debtForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = document.getElementById('new-debt-name').value.trim();
   if (!name) return;
+  const paymentVal = document.getElementById('new-debt-payment').value;
+  const rateVal = document.getElementById('new-debt-rate').value;
+  const record = {
+    name,
+    monthly_payment: paymentVal === '' ? null : paymentVal,
+    interest_rate: rateVal === '' ? null : rateVal,
+  };
 
   if (editingDebtId) {
-    const { error } = await sb.from('debts').update({ name }).eq('id', editingDebtId);
+    const { error } = await sb.from('debts').update(record).eq('id', editingDebtId);
     if (error) return alert('Failed to save changes: ' + error.message);
   } else {
     const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb.from('debts').insert({ name, user_id: user.id });
+    const { error } = await sb.from('debts').insert({ ...record, user_id: user.id });
     if (error) return alert('Failed to add debt: ' + error.message);
   }
   closeDebtModal();

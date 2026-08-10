@@ -95,6 +95,33 @@ header.app-header {
 
 .page-tabs { margin-bottom: 0; }
 
+.admin-header-left { display: flex; align-items: baseline; gap: 14px; }
+.page-title { font-size: 20px; font-weight: 600; margin: 0; }
+.back-link { color: var(--text-secondary); font-size: 14px; text-decoration: none; }
+.back-link:hover { color: var(--series-1); text-decoration: underline; }
+
+.admin-setting-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.admin-setting-label { font-size: 14px; }
+.input-suffix-wrap { position: relative; }
+.input-suffix-wrap input {
+  font: inherit;
+  padding: 8px 26px 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  width: 100px;
+  text-align: right;
+}
+.input-suffix {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
 .user-bar {
   display: flex;
   align-items: center;
@@ -168,6 +195,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .stat-tile .label { font-size: 13px; color: var(--text-secondary); }
 .stat-tile .value { font-size: 26px; font-weight: 600; margin-top: 4px; }
+.stat-tile .sub-value { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
 .stat-tile.total .value { color: var(--series-1); }
 .stat-tile.debt .value { color: var(--critical); }
 
@@ -338,8 +366,22 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   border-bottom: 1px solid var(--gridline);
 }
 .value-row:last-child { border-bottom: none; }
-.value-row .name { font-size: 14px; }
+.value-row .name { flex: 1; font-size: 14px; }
 .value-row input { width: 130px; text-align: right; }
+
+.value-row-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--gridline);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.value-row-header-name { flex: 1; }
+.value-row-header span:not(.value-row-header-name) { flex: none; width: 130px; text-align: right; }
 
 .tab-panel .msg { margin-top: 10px; }
 
@@ -454,6 +496,19 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   text-align: right;
 }
 
+.performance-current { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.performance-current.positive { color: var(--good); }
+.performance-current.negative { color: var(--critical); }
+
+#performance-chart-wrap { width: 100%; }
+#performance-chart { width: 100%; height: auto; display: block; }
+.perf-gridline { stroke: var(--gridline); stroke-width: 1; }
+.perf-zeroline { stroke: var(--text-muted); stroke-width: 1.5; }
+.perf-axis-label { font-size: 10px; fill: var(--text-muted); }
+.perf-area { fill: color-mix(in srgb, var(--series-1) 15%, transparent); stroke: none; }
+.perf-line { fill: none; stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.perf-dot { fill: var(--series-1); }
+
 @media (max-width: 480px) {
   .wrap { padding: 16px 12px 48px; }
   .card { padding: 16px; }
@@ -472,6 +527,8 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   .tab-btn { flex: 1; text-align: center; }
 
   .value-row input { width: 100px; }
+  .value-row-header span:not(.value-row-header-name) { width: 100px; }
+  .value-row-header { font-size: 10px; }
 
   .expense-date { width: 60px; }
   .expense-amount { width: 64px; font-size: 13px; }

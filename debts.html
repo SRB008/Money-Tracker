@@ -34,7 +34,7 @@
   </div>
 
   <div class="card">
-    <h2>Add a value</h2>
+    <h2>Update Debt</h2>
     <div class="field tab-date-field">
       <label for="debt-value-date">Date</label>
       <input id="debt-value-date" type="date">
@@ -42,8 +42,6 @@
     <div class="debt-value-header">
       <span class="debt-value-header-name"></span>
       <span>Outstanding</span>
-      <span>Payment</span>
-      <span>Rate %</span>
     </div>
     <div class="debt-value-rows" id="debt-value-rows"></div>
     <button type="button" class="primary" id="save-debt-values-btn">Save</button>
@@ -59,6 +57,14 @@
       <div class="field">
         <label for="new-debt-name">Name</label>
         <input id="new-debt-name" type="text" placeholder="e.g. Car loan" required>
+      </div>
+      <div class="field">
+        <label for="new-debt-payment">Monthly payment (£)</label>
+        <input id="new-debt-payment" type="number" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="field">
+        <label for="new-debt-rate">Interest rate (%)</label>
+        <input id="new-debt-rate" type="number" step="0.01" min="0" placeholder="0.0">
       </div>
       <div class="modal-actions">
         <button type="button" class="danger hidden" id="debt-modal-delete">Delete</button>

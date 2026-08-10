@@ -11,6 +11,13 @@ function seriesColor(i) {
 
 const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
 
+// ---------- Date helpers (local-time safe; avoids UTC/ISO-string shifting) ----------
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+function toISODate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function parseISODate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function startOfDay(d) { const r = new Date(d); r.setHours(0, 0, 0, 0); return r; }
+
 let accounts = [];
 let values = [];
 
@@ -59,6 +66,7 @@ function renderAll() {
   renderStats();
   renderAccounts();
   renderValueTabs();
+  renderPerformanceChart();
 }
 
 // ---------- Stats ----------
@@ -220,6 +228,7 @@ document.querySelectorAll('.save-tab-btn').forEach(btn => {
 function renderValueTabs() {
   for (const tabName of Object.keys(VALUE_TABS)) {
     const types = VALUE_TABS[tabName];
+    const showContribution = tabName === 'Investments';
     const container = document.getElementById('rows-' + tabName);
     container.innerHTML = '';
     const tabAccounts = accounts.filter(a => types.includes(a.type));
@@ -241,6 +250,7 @@ function renderValueTabs() {
         row.innerHTML = `
           <span class="name">${escapeHtml(acc.name)}</span>
           <input type="number" step="0.01" min="0" placeholder="0.00" class="value-input" data-account-id="${acc.id}">
+          ${showContribution ? `<input type="number" step="0.01" min="0" placeholder="0.00" class="contribution-input" data-account-id="${acc.id}">` : ''}
         `;
         container.appendChild(row);
       }
@@ -259,7 +269,14 @@ async function saveTabValues(tabName) {
   const container = document.getElementById('rows-' + tabName);
   const entries = [...container.querySelectorAll('.value-input')]
     .filter(input => input.value.trim() !== '')
-    .map(input => ({ account_id: input.dataset.accountId, date, value: input.value }));
+    .map(input => {
+      const entry = { account_id: input.dataset.accountId, date, value: input.value };
+      const contribInput = container.querySelector(`.contribution-input[data-account-id="${input.dataset.accountId}"]`);
+      if (contribInput && contribInput.value.trim() !== '') {
+        entry.contribution = contribInput.value;
+      }
+      return entry;
+    });
   if (entries.length === 0) { msg.textContent = 'Enter at least one value.'; msg.className = 'msg error'; return; }
 
   const { data: { user } } = await sb.auth.getUser();
@@ -268,6 +285,181 @@ async function saveTabValues(tabName) {
   msg.textContent = 'Saved.';
   msg.className = 'msg ok';
   await loadAll();
+}
+
+// ---------- Performance chart ----------
+// Growth % is measured from a fixed baseline (each account's value 12 months
+// ago), carrying each account's last known value forward between its own
+// update dates. Contributions are subtracted from the raw gain so only
+// organic growth counts: pct = (currentTotal - baselineTotal - contributions) / baselineTotal.
+
+function valueAsOf(entries, dateStr) {
+  let result = null;
+  for (const e of entries) {
+    if (e.date <= dateStr && (!result || e.date > result.date || (e.date === result.date && e.created_at > result.created_at))) {
+      result = e;
+    }
+  }
+  return result;
+}
+
+// Growth series for a single set of entries (one account, or the combined
+// portfolio) relative to a fixed baseline date. Carries the last known value
+// forward between update dates; contributions are subtracted the moment
+// they're recorded so only organic growth counts.
+function computeGrowthSeries(entriesList, baselineStr, todayStr) {
+  const baselineValue = entriesList.reduce((sum, entries) => {
+    const v = valueAsOf(entries, baselineStr);
+    return sum + (v ? Number(v.value) : 0);
+  }, 0);
+  if (baselineValue <= 0) return null;
+
+  const dateSet = new Set([baselineStr, todayStr]);
+  for (const entries of entriesList) {
+    for (const e of entries) {
+      if (e.date > baselineStr && e.date <= todayStr) dateSet.add(e.date);
+    }
+  }
+  const dates = [...dateSet].sort();
+
+  let cumulativeContribution = 0;
+  const points = dates.map(dateStr => {
+    if (dateStr > baselineStr) {
+      for (const entries of entriesList) {
+        for (const e of entries) {
+          if (e.date === dateStr && e.contribution != null) cumulativeContribution += Number(e.contribution);
+        }
+      }
+    }
+    const currentValue = entriesList.reduce((sum, entries) => {
+      const v = valueAsOf(entries, dateStr);
+      return sum + (v ? Number(v.value) : 0);
+    }, 0);
+    const pct = dateStr === baselineStr ? 0 : ((currentValue - baselineValue - cumulativeContribution) / baselineValue) * 100;
+    return { date: dateStr, pct };
+  });
+
+  return points.length >= 2 ? points : null;
+}
+
+function renderPerformanceChart() {
+  const wrap = document.getElementById('performance-chart-wrap');
+  const empty = document.getElementById('performance-empty');
+  const currentLabel = document.getElementById('performance-current');
+  const legend = document.getElementById('performance-legend');
+  const svg = document.getElementById('performance-chart');
+
+  const today = startOfDay(new Date());
+  const baselineDate = new Date(today.getFullYear(), today.getMonth() - 12, today.getDate());
+  const baselineStr = toISODate(baselineDate);
+  const todayStr = toISODate(today);
+
+  const entriesByAccount = {};
+  for (const v of values) {
+    (entriesByAccount[v.account_id] ||= []).push(v);
+  }
+
+  const eligibleAccounts = accounts.filter(acc => valueAsOf(entriesByAccount[acc.id] || [], baselineStr) !== null);
+
+  const totalPoints = eligibleAccounts.length > 0
+    ? computeGrowthSeries(eligibleAccounts.map(acc => entriesByAccount[acc.id]), baselineStr, todayStr)
+    : null;
+
+  if (!totalPoints) {
+    wrap.classList.add('hidden');
+    currentLabel.textContent = '';
+    legend.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+
+  const series = [{ label: 'Total', color: 'var(--series-1)', points: totalPoints, isTotal: true }];
+  for (const acc of eligibleAccounts) {
+    const points = computeGrowthSeries([entriesByAccount[acc.id]], baselineStr, todayStr);
+    if (points) series.push({ label: acc.name, color: seriesColor(accounts.indexOf(acc)), points, isTotal: false });
+  }
+
+  empty.classList.add('hidden');
+  wrap.classList.remove('hidden');
+
+  const current = totalPoints[totalPoints.length - 1].pct;
+  currentLabel.textContent = `${current >= 0 ? '+' : ''}${current.toFixed(1)}%`;
+  currentLabel.className = 'performance-current ' + (current >= 0 ? 'positive' : 'negative');
+
+  legend.innerHTML = series.map(s => `
+    <span class="item"><span class="swatch" style="background:${s.color}"></span>${escapeHtml(s.label)}</span>
+  `).join('');
+
+  svg.innerHTML = buildPerformanceSvg(series, baselineStr, todayStr);
+}
+
+function niceStep(range) {
+  const rough = range / 5;
+  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / mag;
+  const step = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return step * mag;
+}
+
+function buildPerformanceSvg(series, baselineStr, todayStr) {
+  const W = 760, H = 260;
+  const pad = { left: 48, right: 16, top: 16, bottom: 28 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  const startMs = parseISODate(baselineStr).getTime();
+  const endMs = parseISODate(todayStr).getTime();
+  const spanMs = Math.max(endMs - startMs, 1);
+  const xScale = (dateStr) => pad.left + ((parseISODate(dateStr).getTime() - startMs) / spanMs) * plotW;
+
+  const allPct = series.flatMap(s => s.points.map(p => p.pct));
+  let minPct = Math.min(0, ...allPct);
+  let maxPct = Math.max(0, ...allPct);
+  if (minPct === maxPct) { minPct -= 1; maxPct += 1; }
+  const rangePad = (maxPct - minPct) * 0.1 || 1;
+  minPct -= rangePad;
+  maxPct += rangePad;
+  const yScale = (pct) => pad.top + (1 - (pct - minPct) / (maxPct - minPct)) * plotH;
+
+  const step = niceStep(maxPct - minPct);
+  const gridLines = [];
+  const firstTick = Math.ceil(minPct / step) * step;
+  for (let g = firstTick; g <= maxPct; g += step) {
+    const y = yScale(g).toFixed(1);
+    const isZero = Math.abs(g) < 1e-9;
+    gridLines.push(`<line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" class="perf-gridline${isZero ? ' perf-zeroline' : ''}" />`);
+    gridLines.push(`<text x="${pad.left - 8}" y="${y}" class="perf-axis-label" text-anchor="end" dominant-baseline="middle">${g > 0 ? '+' : ''}${g.toFixed(0)}%</text>`);
+  }
+
+  const totalSeries = series.find(s => s.isTotal) || series[0];
+  const monthLabels = [];
+  const seenMonths = new Set();
+  for (const p of totalSeries.points) {
+    const d = parseISODate(p.date);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    if (!seenMonths.has(key)) {
+      seenMonths.add(key);
+      const x = xScale(p.date).toFixed(1);
+      monthLabels.push(`<text x="${x}" y="${H - 8}" class="perf-axis-label" text-anchor="middle">${d.toLocaleDateString('en-GB', { month: 'short' })}</text>`);
+    }
+  }
+
+  const zeroY = yScale(0).toFixed(1);
+  const seriesSvg = series.map(s => {
+    const linePoints = s.points.map(p => `${xScale(p.date).toFixed(1)},${yScale(p.pct).toFixed(1)}`).join(' ');
+    const area = s.isTotal
+      ? `<polygon points="${xScale(s.points[0].date).toFixed(1)},${zeroY} ${linePoints} ${xScale(s.points[s.points.length - 1].date).toFixed(1)},${zeroY}" class="perf-area" style="fill:color-mix(in srgb, ${s.color} 15%, transparent)" />`
+      : '';
+    const dots = s.points.map(p => {
+      const x = xScale(p.date).toFixed(1);
+      const y = yScale(p.pct).toFixed(1);
+      const dateLabel = parseISODate(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      return `<circle cx="${x}" cy="${y}" r="${s.isTotal ? 2.5 : 2}" style="fill:${s.color}"><title>${escapeHtml(s.label)} — ${dateLabel}: ${p.pct >= 0 ? '+' : ''}${p.pct.toFixed(1)}%</title></circle>`;
+    }).join('');
+    return `${area}<polyline points="${linePoints}" class="perf-line" style="stroke:${s.color};stroke-width:${s.isTotal ? 2.5 : 1.5}" />${dots}`;
+  }).join('');
+
+  return `${gridLines.join('')}${seriesSvg}${monthLabels.join('')}`;
 }
 
 // ---------- utils ----------
