@@ -258,11 +258,27 @@ form.row {
   min-height: auto;
   padding: 6px 4px;
   margin: -6px -4px;
-  font-size: 12px;
-  color: var(--series-1);
-  text-decoration: underline;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-secondary);
+  display: inline-block;
+  transition: transform 0.15s ease;
 }
-.detail-toggle:hover { filter: none; opacity: 0.8; }
+.detail-toggle.expanded { transform: rotate(90deg); }
+.detail-toggle:hover { filter: none; color: var(--series-1); }
+.share-edit-btn {
+  flex: none;
+  width: 28px;
+  border: none;
+  background: none;
+  min-height: auto;
+  padding: 4px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  text-align: right;
+}
+.share-edit-btn:hover { filter: none; color: var(--series-1); }
 .account-extra { margin-top: 2px; }
 .account-detail { font-size: 12px; color: var(--text-secondary); }
 .account-note { font-size: 12px; color: var(--text-muted); font-style: italic; }
@@ -472,6 +488,15 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   font-size: 14px;
 }
 .expense-amount.projected { color: var(--text-muted); font-style: italic; }
+.share-price {
+  flex: none;
+  width: 80px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.share-price.fallback { font-style: italic; }
 .expense-running-total {
   flex: none;
   width: 100px;
@@ -532,6 +557,7 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 
   .expense-date { width: 60px; }
   .expense-amount { width: 64px; font-size: 13px; }
+  .share-price { width: 64px; font-size: 13px; }
   .expense-running-total { width: 74px; font-size: 13px; }
   .expense-list-header { font-size: 10px; }
   .month-nav button { padding: 6px 10px; }

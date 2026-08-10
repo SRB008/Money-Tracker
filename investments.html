@@ -25,7 +25,8 @@
     </div>
   </header>
 
-  <div class="stat-row" id="stat-row"></div>
+  <div class="stat-row" id="stat-row-total"></div>
+  <div class="stat-row" id="stat-row-accounts"></div>
 
   <div class="card">
     <div class="card-header">
@@ -80,6 +81,51 @@
     <div id="performance-empty" class="empty hidden">Not enough history yet to show 12 month performance.</div>
   </div>
 
+  <div class="card">
+    <div class="card-header">
+      <h2>Shares</h2>
+      <button type="button" class="primary" id="update-shares-btn">Update</button>
+    </div>
+    <div class="expense-list-header">
+      <span class="expense-date">Code</span>
+      <span class="expense-name"></span>
+      <span class="expense-amount">Quantity</span>
+      <span class="share-price">Price</span>
+      <span class="expense-running-total">Value</span>
+    </div>
+    <div class="expense-list" id="shares-grid"></div>
+    <div class="month-total" id="shares-total"></div>
+  </div>
+
+</div>
+
+<div id="share-modal" class="modal-overlay hidden">
+  <div class="modal card">
+    <h2 id="share-modal-title">Add share</h2>
+    <form id="share-form">
+      <div class="field">
+        <label for="new-share-title">Title</label>
+        <input id="new-share-title" type="text" placeholder="e.g. Apple Inc." required>
+      </div>
+      <div class="field">
+        <label for="new-share-code">Trading code</label>
+        <input id="new-share-code" type="text" placeholder="e.g. AAPL" required>
+      </div>
+      <div class="field">
+        <label for="new-share-quantity">Quantity</label>
+        <input id="new-share-quantity" type="number" step="0.0001" min="0" placeholder="0" required>
+      </div>
+      <div class="field">
+        <label for="new-share-price">Price (£)</label>
+        <input id="new-share-price" type="number" step="0.0001" min="0" placeholder="0.00">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="danger hidden" id="share-modal-delete">Delete</button>
+        <button type="button" id="share-modal-cancel">Cancel</button>
+        <button type="submit" class="primary" id="share-modal-submit">Add share</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <div id="account-modal" class="modal-overlay hidden">

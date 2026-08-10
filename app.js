@@ -20,6 +20,7 @@ function startOfDay(d) { const r = new Date(d); r.setHours(0, 0, 0, 0); return r
 
 let accounts = [];
 let values = [];
+let shares = [];
 
 // ---------- Auth ----------
 
@@ -40,14 +41,17 @@ sb.auth.onAuthStateChange((_event, session) => {
 // ---------- Data loading ----------
 
 async function loadAll() {
-  const [{ data: acc, error: accErr }, { data: val, error: valErr }] = await Promise.all([
+  const [{ data: acc, error: accErr }, { data: val, error: valErr }, { data: shr, error: shrErr }] = await Promise.all([
     sb.from('accounts').select('*').order('type').order('name'),
     sb.from('investment_values').select('*').order('date'),
+    sb.from('shares').select('*').order('title'),
   ]);
   if (accErr) return alert('Failed to load accounts: ' + accErr.message);
   if (valErr) return alert('Failed to load values: ' + valErr.message);
+  if (shrErr) return alert('Failed to load shares: ' + shrErr.message);
   accounts = acc || [];
   values = val || [];
+  shares = shr || [];
   renderAll();
 }
 
@@ -67,6 +71,8 @@ function renderAll() {
   renderAccounts();
   renderValueTabs();
   renderPerformanceChart();
+  renderShares();
+  loadSharePrices();
 }
 
 // ---------- Stats ----------
@@ -82,12 +88,19 @@ function renderStats() {
       grandTotal += Number(v.value);
     }
   }
-  const row = document.getElementById('stat-row');
+  const sharesTotal = sharesTotalValue();
+  grandTotal += sharesTotal;
+
+  const totalRow = document.getElementById('stat-row-total');
+  totalRow.innerHTML = '';
+  totalRow.appendChild(statTile('Total', fmtGBP(grandTotal), true));
+
+  const row = document.getElementById('stat-row-accounts');
   row.innerHTML = '';
-  row.appendChild(statTile('Total', fmtGBP(grandTotal), true));
   for (const type of ['Savings', 'ISA', 'Pension']) {
     row.appendChild(statTile(type, fmtGBP(totals[type] || 0), false));
   }
+  row.appendChild(statTile('Shares', fmtGBP(sharesTotal), false));
 }
 function statTile(label, value, isTotal) {
   const div = document.createElement('div');
@@ -130,7 +143,7 @@ function renderAccounts() {
         <div class="account-item-main">
           <span class="name-group">
             <span class="name"><span class="dot" style="background:${seriesColor(idx)}"></span>${escapeHtml(acc.name)}</span>
-            ${hasExtra ? `<button type="button" class="detail-toggle">${expanded ? 'Hide' : 'Details'}</button>` : ''}
+            ${hasExtra ? `<button type="button" class="detail-toggle${expanded ? ' expanded' : ''}" aria-label="${expanded ? 'Hide details' : 'Show details'}">&#9654;</button>` : ''}
           </span>
           <span class="value">${v ? fmtGBP(v.value) : '—'}</span>
         </div>
@@ -461,6 +474,198 @@ function buildPerformanceSvg(series, baselineStr, todayStr) {
 
   return `${gridLines.join('')}${seriesSvg}${monthLabels.join('')}`;
 }
+
+// ---------- Shares ----------
+// Live prices come from Alpha Vantage's GLOBAL_QUOTE endpoint (same approach as
+// share.html). LSE tickers are quoted in pence, so results are divided by 100.
+// The stored `price` column is used as a fallback while a quote is loading or
+// if the lookup fails (free tier is limited to 25 requests/day, ~5/minute).
+
+const sharePriceCache = {};
+
+async function fetchSharePrice(tradingCode) {
+  let symbol = tradingCode.trim().toUpperCase();
+  if (!symbol.includes('.')) symbol = symbol + '.LON';
+  const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${window.ALPHA_VANTAGE_API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Network error contacting Alpha Vantage.');
+  const data = await res.json();
+
+  if (data.Note) throw new Error('API rate limit reached.');
+  if (data.Information) throw new Error(data.Information);
+  if (data['Error Message']) throw new Error('Ticker not found.');
+
+  const quote = data['Global Quote'];
+  const raw = quote && quote['05. price'];
+  if (!raw || raw === '0.0000') throw new Error('No data found for that ticker.');
+  return Number(raw) / 100;
+}
+
+async function loadSharePrices() {
+  const codes = [...new Set(shares.map(s => s.trading_code))].filter(code => !sharePriceCache[code]);
+  // Fetched one at a time, not in parallel — Alpha Vantage's free tier rejects
+  // simultaneous bursts from the same key, which otherwise left only one
+  // (non-deterministic) request succeeding per page load.
+  for (const code of codes) {
+    sharePriceCache[code] = { loading: true };
+    try {
+      const price = await fetchSharePrice(code);
+      sharePriceCache[code] = { price };
+    } catch (err) {
+      sharePriceCache[code] = { error: err.message };
+    }
+    renderShares();
+    renderStats();
+  }
+}
+
+function sharePriceInfo(share) {
+  const cached = sharePriceCache[share.trading_code];
+  if (cached && cached.price != null) return { price: cached.price, label: fmtGBP(cached.price), error: null, live: true };
+  if (cached && cached.loading) return { price: null, label: '…', error: null, live: false };
+  const price = share.price != null ? Number(share.price) : null;
+  return { price, label: price != null ? fmtGBP(price) : '—', error: cached ? cached.error : null, live: false };
+}
+
+function sharesTotalValue() {
+  let total = 0;
+  for (const share of shares) {
+    const { price } = sharePriceInfo(share);
+    if (price != null) total += price * Number(share.quantity);
+  }
+  return total;
+}
+
+document.getElementById('update-shares-btn').addEventListener('click', updateSharePrices);
+
+async function updateSharePrices() {
+  const btn = document.getElementById('update-shares-btn');
+  const updates = shares
+    .map(share => ({ share, cached: sharePriceCache[share.trading_code] }))
+    .filter(({ cached }) => cached && cached.price != null);
+
+  if (updates.length === 0) {
+    alert('No live prices available yet to update.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
+
+  try {
+    const results = await Promise.all(updates.map(({ share, cached }) =>
+      sb.from('shares').update({ price: cached.price, updated_at: new Date().toISOString() }).eq('id', share.id)
+    ));
+    const failed = results.filter(r => r.error);
+    if (failed.length > 0) {
+      alert(`Failed to update ${failed.length} share price(s): ${failed[0].error.message}`);
+      btn.disabled = false;
+      btn.textContent = 'Update';
+    } else {
+      btn.textContent = 'Updated';
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Update';
+    throw err;
+  }
+
+  await loadAll();
+}
+
+function renderShares() {
+  const grid = document.getElementById('shares-grid');
+  const totalEl = document.getElementById('shares-total');
+  grid.innerHTML = '';
+
+  if (shares.length === 0) {
+    totalEl.textContent = '';
+    grid.innerHTML = '<div class="empty">No shares yet — add one to get started.</div>';
+    return;
+  }
+
+  let total = 0;
+  for (const share of shares) {
+    const { price, label: priceLabel, error, live } = sharePriceInfo(share);
+    const value = price != null ? price * Number(share.quantity) : null;
+    if (value != null) total += value;
+
+    const row = document.createElement('div');
+    row.className = 'expense-row editable';
+    row.innerHTML = `
+      <div class="expense-row-main">
+        <span class="expense-date">${escapeHtml(share.trading_code)}</span>
+        <span class="expense-name">${escapeHtml(share.title)}</span>
+        <span class="expense-amount">${Number(share.quantity).toLocaleString('en-GB')}</span>
+        <span class="share-price${live ? '' : ' fallback'}"${error ? ` title="${escapeHtml(error)}"` : ''}>${priceLabel}</span>
+        <span class="expense-running-total">${value != null ? fmtGBP(value) : '—'}</span>
+      </div>
+    `;
+    row.addEventListener('click', () => openShareModal(share));
+    grid.appendChild(row);
+  }
+
+  totalEl.textContent = `Total: ${fmtGBP(total)}`;
+}
+
+const shareModal = document.getElementById('share-modal');
+const shareForm = document.getElementById('share-form');
+let editingShareId = null;
+
+function openShareModal(share) {
+  shareForm.reset();
+  editingShareId = share ? share.id : null;
+  document.getElementById('share-modal-title').textContent = share ? 'Edit share' : 'Add share';
+  document.getElementById('share-modal-submit').textContent = share ? 'Save changes' : 'Add share';
+  document.getElementById('share-modal-delete').classList.toggle('hidden', !editingShareId);
+  if (share) {
+    document.getElementById('new-share-title').value = share.title;
+    document.getElementById('new-share-code').value = share.trading_code;
+    document.getElementById('new-share-quantity').value = share.quantity;
+    document.getElementById('new-share-price').value = share.price != null ? share.price : '';
+  }
+  shareModal.classList.remove('hidden');
+  document.getElementById('new-share-title').focus();
+}
+function closeShareModal() {
+  shareModal.classList.add('hidden');
+}
+
+document.getElementById('share-modal-cancel').addEventListener('click', closeShareModal);
+shareModal.addEventListener('click', (e) => { if (e.target === shareModal) closeShareModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !shareModal.classList.contains('hidden')) closeShareModal();
+});
+
+document.getElementById('share-modal-delete').addEventListener('click', async () => {
+  if (!editingShareId) return;
+  if (!confirm('Delete this share? This can\'t be undone.')) return;
+  const { error } = await sb.from('shares').delete().eq('id', editingShareId);
+  if (error) return alert('Failed to delete: ' + error.message);
+  closeShareModal();
+  await loadAll();
+});
+
+shareForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const title = document.getElementById('new-share-title').value.trim();
+  const trading_code = document.getElementById('new-share-code').value.trim();
+  const quantity = document.getElementById('new-share-quantity').value;
+  const priceVal = document.getElementById('new-share-price').value;
+  if (!title || !trading_code || quantity === '') return;
+  const record = { title, trading_code, quantity, price: priceVal === '' ? null : priceVal, updated_at: new Date().toISOString() };
+
+  if (editingShareId) {
+    const { error } = await sb.from('shares').update(record).eq('id', editingShareId);
+    if (error) return alert('Failed to save changes: ' + error.message);
+  } else {
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb.from('shares').insert({ ...record, user_id: user.id });
+    if (error) return alert('Failed to add share: ' + error.message);
+  }
+  closeShareModal();
+  await loadAll();
+});
 
 // ---------- utils ----------
 

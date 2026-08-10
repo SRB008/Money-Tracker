@@ -25,6 +25,7 @@ let expenses = [];
 let occurrences = [];
 let debts = [];
 let debtValues = [];
+let shares = [];
 let drawdownRate = 4;
 
 // ---------- Auth ----------
@@ -107,6 +108,7 @@ async function loadAll() {
     { data: d, error: debtErr },
     { data: dv, error: debtValErr },
     { data: setting, error: settingErr },
+    { data: shr, error: shrErr },
   ] = await Promise.all([
     sb.from('accounts').select('*').order('type').order('name'),
     sb.from('investment_values').select('*').order('date'),
@@ -115,6 +117,7 @@ async function loadAll() {
     sb.from('debts').select('*').order('name'),
     sb.from('debt_values').select('*').order('date'),
     sb.from('app_settings').select('*').eq('key', 'pension_drawdown_rate').maybeSingle(),
+    sb.from('shares').select('*').order('title'),
   ]);
   if (accErr) return alert('Failed to load accounts: ' + accErr.message);
   if (valErr) return alert('Failed to load values: ' + valErr.message);
@@ -122,12 +125,14 @@ async function loadAll() {
   if (occErr) return alert('Failed to load expense occurrences: ' + occErr.message);
   if (debtErr) return alert('Failed to load debts: ' + debtErr.message);
   if (debtValErr) return alert('Failed to load debt values: ' + debtValErr.message);
+  if (shrErr) return alert('Failed to load shares: ' + shrErr.message);
   accounts = acc || [];
   values = val || [];
   expenses = exps || [];
   occurrences = occs || [];
   debts = d || [];
   debtValues = dv || [];
+  shares = shr || [];
   drawdownRate = (!settingErr && setting) ? Number(setting.value) : 4;
   renderAll();
 }
@@ -161,6 +166,18 @@ function latestValueByDebt() {
   return latest;
 }
 
+// ---------- Share value ----------
+// Uses the stored `price` column directly (no live Alpha Vantage lookup here —
+// see investments.html/app.js for the live-priced view).
+
+function sharesTotalValue() {
+  let total = 0;
+  for (const share of shares) {
+    if (share.price != null) total += Number(share.price) * Number(share.quantity);
+  }
+  return total;
+}
+
 function renderStats() {
   const latest = latestValueByAccount();
   const totals = { Savings: 0, ISA: 0, Pension: 0 };
@@ -172,6 +189,8 @@ function renderStats() {
       grandTotal += Number(v.value);
     }
   }
+  const sharesTotal = sharesTotalValue();
+  grandTotal += sharesTotal;
 
   const latestDebt = latestValueByDebt();
   let totalDebt = 0;
@@ -187,6 +206,7 @@ function renderStats() {
   for (const type of ['Savings', 'ISA', 'Pension']) {
     accountsRow.appendChild(statTile(type, fmtGBP(totals[type] || 0), false));
   }
+  accountsRow.appendChild(statTile('Shares', fmtGBP(sharesTotal), false));
 
   const debtRow = document.getElementById('stat-row-debt');
   debtRow.innerHTML = '';
@@ -194,7 +214,7 @@ function renderStats() {
 
   const totalRow = document.getElementById('stat-row-total');
   totalRow.innerHTML = '';
-  totalRow.appendChild(statTile('Total', fmtGBP(netTotal), true));
+  totalRow.appendChild(statTile('Realisable Financial Net Worth', fmtGBP(netTotal), true));
 
   const netIncomePA = (totals.ISA + totals.Pension * 0.65 - totalDebt) * (drawdownRate / 100);
   const netIncomePM = netIncomePA / 12;
@@ -206,7 +226,7 @@ function renderStats() {
   incomeTile.innerHTML = `
     <div class="label">Potential Net Income</div>
     <div class="value">${fmtGBP(netIncomePA)} pa</div>
-    <div class="sub-value">${fmtGBP(netIncomePM)} pm&nbsp; |&nbsp; @${drawdownRate}%</div>
+    <div class="sub-value">${fmtGBP(netIncomePM)} pm · @${drawdownRate}%</div>
   `;
   outlookRow.appendChild(incomeTile);
 }
