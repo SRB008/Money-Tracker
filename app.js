@@ -16,70 +16,17 @@ let values = [];
 
 // ---------- Auth ----------
 
-const authView = document.getElementById('auth-view');
 const appView = document.getElementById('app-view');
-const authForm = document.getElementById('auth-form');
-const authTitle = document.getElementById('auth-title');
-const authSubmit = document.getElementById('auth-submit');
-const authMsg = document.getElementById('auth-msg');
-const authToggleText = document.getElementById('auth-toggle-text');
-const authToggleLink = document.getElementById('auth-toggle-link');
-let authMode = 'signin';
-
-function setAuthMode(mode) {
-  authMode = mode;
-  authMsg.textContent = '';
-  if (mode === 'signin') {
-    authTitle.textContent = 'Sign in';
-    authSubmit.textContent = 'Sign in';
-    authToggleText.textContent = 'Need an account?';
-    authToggleLink.textContent = 'Sign up';
-  } else {
-    authTitle.textContent = 'Create account';
-    authSubmit.textContent = 'Sign up';
-    authToggleText.textContent = 'Already have an account?';
-    authToggleLink.textContent = 'Sign in';
-  }
-}
-authToggleLink.addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
-
-authForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-password').value;
-  authMsg.textContent = '';
-  authMsg.className = 'msg';
-  authSubmit.disabled = true;
-  try {
-    if (authMode === 'signin') {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-    } else {
-      const { error } = await sb.auth.signUp({ email, password });
-      if (error) throw error;
-      authMsg.textContent = 'Account created. Check your email if confirmation is required, then sign in.';
-      authMsg.className = 'msg ok';
-      setAuthMode('signin');
-    }
-  } catch (err) {
-    authMsg.textContent = err.message;
-    authMsg.className = 'msg error';
-  } finally {
-    authSubmit.disabled = false;
-  }
-});
 
 document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
 
 sb.auth.onAuthStateChange((_event, session) => {
   if (session) {
-    authView.classList.add('hidden');
     appView.classList.remove('hidden');
     document.getElementById('user-email').textContent = session.user.email;
     loadAll();
   } else {
-    appView.classList.add('hidden');
-    authView.classList.remove('hidden');
+    window.location.href = 'index.html';
   }
 });
 

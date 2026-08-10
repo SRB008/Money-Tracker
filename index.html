@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Investments</title>
+<title>Dashboard</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -37,100 +37,34 @@
 <!-- Signed-in view -->
 <div id="app-view" class="wrap hidden">
   <header class="app-header">
-    <div class="header-title">
-      <h1>Investments</h1>
-      <nav class="page-nav"><a href="expenses.html">Expenses</a></nav>
-    </div>
+    <nav class="tabs page-tabs">
+      <a href="index.html" class="tab-btn active">Dashboard</a>
+      <a href="investments.html" class="tab-btn">Investments</a>
+      <a href="expenses.html" class="tab-btn">Expenses</a>
+      <a href="debts.html" class="tab-btn">Debts</a>
+    </nav>
     <div class="user-bar">
       <span id="user-email"></span>
       <button id="signout-btn">Sign out</button>
     </div>
   </header>
 
-  <div class="stat-row" id="stat-row"></div>
+  <div class="stat-row" id="stat-row-accounts"></div>
+  <div class="stat-row" id="stat-row-debt"></div>
+  <div class="stat-row" id="stat-row-total"></div>
 
   <div class="card">
-    <div class="card-header">
-      <h2>Accounts</h2>
-      <button type="button" class="primary" id="add-account-btn">Add account</button>
+    <h2>Next 8 days</h2>
+    <div class="expense-list-header">
+      <span class="expense-date"></span>
+      <span class="expense-name"></span>
+      <span class="expense-amount">Amount</span>
+      <span class="expense-running-total">Running total</span>
     </div>
-    <div class="accounts-grid" id="accounts-grid"></div>
+    <div class="expense-list" id="next8-list"></div>
+    <div id="next8-empty" class="empty hidden">Nothing due in the next 8 days.</div>
   </div>
 
-  <div class="card">
-    <h2>Add a value</h2>
-    <div class="tabs" id="value-tabs">
-      <button type="button" class="tab-btn active" data-tab="Savings">Savings</button>
-      <button type="button" class="tab-btn" data-tab="Investments">Investments</button>
-    </div>
-
-    <div class="tab-panel" data-tab-panel="Savings">
-      <div class="field tab-date-field">
-        <label for="date-Savings">Date</label>
-        <input id="date-Savings" type="date">
-      </div>
-      <div class="value-rows" id="rows-Savings"></div>
-      <button type="button" class="primary save-tab-btn" data-tab="Savings">Save</button>
-      <div class="msg" id="msg-Savings"></div>
-    </div>
-
-    <div class="tab-panel hidden" data-tab-panel="Investments">
-      <div class="field tab-date-field">
-        <label for="date-Investments">Date</label>
-        <input id="date-Investments" type="date">
-      </div>
-      <div class="value-rows" id="rows-Investments"></div>
-      <button type="button" class="primary save-tab-btn" data-tab="Investments">Save</button>
-      <div class="msg" id="msg-Investments"></div>
-    </div>
-  </div>
-
-</div>
-
-<div id="account-modal" class="modal-overlay hidden">
-  <div class="modal card">
-    <h2>Add account</h2>
-    <form id="account-form">
-      <div class="field">
-        <label for="new-account-name">Account name</label>
-        <input id="new-account-name" type="text" placeholder="e.g. Vanguard S&S ISA" required>
-      </div>
-      <div class="field">
-        <label for="new-account-type">Type</label>
-        <select id="new-account-type" required>
-          <option value="Savings">Savings</option>
-          <option value="ISA">ISA</option>
-          <option value="Pension">Pension</option>
-        </select>
-      </div>
-      <div class="field savings-field">
-        <label for="new-account-rate">Interest rate (%)</label>
-        <input id="new-account-rate" type="number" step="0.01" min="0" placeholder="0.00">
-      </div>
-      <div class="field savings-field">
-        <label for="new-account-access">Access</label>
-        <select id="new-account-access">
-          <option value="Instant">Instant</option>
-          <option value="Fixed Term">Fixed Term</option>
-        </select>
-      </div>
-      <div class="field savings-field">
-        <label for="new-account-taxable">Taxable</label>
-        <select id="new-account-taxable">
-          <option value="Yes">Yes</option>
-          <option value="No">No</option>
-        </select>
-      </div>
-      <div class="field savings-field">
-        <label for="new-account-note">Note</label>
-        <input id="new-account-note" type="text" placeholder="Optional note">
-      </div>
-      <div class="modal-actions">
-        <button type="button" id="account-modal-cancel">Cancel</button>
-        <button type="submit" class="primary">Add account</button>
-      </div>
-    </form>
-  </div>
 </div>
 
 <script>
@@ -145,6 +79,6 @@
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
 <script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
-<script src="app.js" onerror="showFatal('Failed to load app.js')"></script>
+<script src="dashboard.js" onerror="showFatal('Failed to load dashboard.js')"></script>
 </body>
 </html>

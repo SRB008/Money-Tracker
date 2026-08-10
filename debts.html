@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Debts</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="fatal-error" class="hidden" style="max-width:600px;margin:60px auto;padding:20px;border:1px solid #d03b3b;border-radius:8px;color:#d03b3b;font-family:system-ui,sans-serif;"></div>
+
+<div id="app-view" class="wrap hidden">
+  <header class="app-header">
+    <nav class="tabs page-tabs">
+      <a href="index.html" class="tab-btn">Dashboard</a>
+      <a href="investments.html" class="tab-btn">Investments</a>
+      <a href="expenses.html" class="tab-btn">Expenses</a>
+      <a href="debts.html" class="tab-btn active">Debts</a>
+    </nav>
+    <div class="user-bar">
+      <span id="user-email"></span>
+      <button id="signout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Debts</h2>
+      <button type="button" class="primary" id="add-debt-btn">Add debt</button>
+    </div>
+    <div class="accounts-grid" id="debts-grid"></div>
+  </div>
+
+  <div class="card">
+    <h2>Add a value</h2>
+    <div class="field tab-date-field">
+      <label for="debt-value-date">Date</label>
+      <input id="debt-value-date" type="date">
+    </div>
+    <div class="debt-value-header">
+      <span class="debt-value-header-name"></span>
+      <span>Outstanding</span>
+      <span>Payment</span>
+      <span>Rate %</span>
+    </div>
+    <div class="debt-value-rows" id="debt-value-rows"></div>
+    <button type="button" class="primary" id="save-debt-values-btn">Save</button>
+    <div class="msg" id="debt-value-msg"></div>
+  </div>
+
+</div>
+
+<div id="debt-modal" class="modal-overlay hidden">
+  <div class="modal card">
+    <h2 id="debt-modal-title">Add debt</h2>
+    <form id="debt-form">
+      <div class="field">
+        <label for="new-debt-name">Name</label>
+        <input id="new-debt-name" type="text" placeholder="e.g. Car loan" required>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="danger hidden" id="debt-modal-delete">Delete</button>
+        <button type="button" id="debt-modal-cancel">Cancel</button>
+        <button type="submit" class="primary" id="debt-modal-submit">Add debt</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  function showFatal(msg) {
+    var el = document.getElementById('fatal-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  window.addEventListener('error', function (e) {
+    showFatal('Something failed to load or run: ' + e.message + ' (' + (e.filename || '') + (e.lineno ? ':' + e.lineno : '') + ')');
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
+<script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
+<script src="debts.js" onerror="showFatal('Failed to load debts.js')"></script>
+</body>
+</html>

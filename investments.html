@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Investments</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="fatal-error" class="hidden" style="max-width:600px;margin:60px auto;padding:20px;border:1px solid #d03b3b;border-radius:8px;color:#d03b3b;font-family:system-ui,sans-serif;"></div>
+
+<div id="app-view" class="wrap hidden">
+  <header class="app-header">
+    <nav class="tabs page-tabs">
+      <a href="index.html" class="tab-btn">Dashboard</a>
+      <a href="investments.html" class="tab-btn active">Investments</a>
+      <a href="expenses.html" class="tab-btn">Expenses</a>
+      <a href="debts.html" class="tab-btn">Debts</a>
+    </nav>
+    <div class="user-bar">
+      <span id="user-email"></span>
+      <button id="signout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="stat-row" id="stat-row"></div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Accounts</h2>
+      <button type="button" class="primary" id="add-account-btn">Add account</button>
+    </div>
+    <div class="accounts-grid" id="accounts-grid"></div>
+  </div>
+
+  <div class="card">
+    <h2>Update a value</h2>
+    <div class="tabs" id="value-tabs">
+      <button type="button" class="tab-btn active" data-tab="Savings">Savings</button>
+      <button type="button" class="tab-btn" data-tab="Investments">Investments</button>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="Savings">
+      <div class="field tab-date-field">
+        <label for="date-Savings">Date</label>
+        <input id="date-Savings" type="date">
+      </div>
+      <div class="value-rows" id="rows-Savings"></div>
+      <button type="button" class="primary save-tab-btn" data-tab="Savings">Save</button>
+      <div class="msg" id="msg-Savings"></div>
+    </div>
+
+    <div class="tab-panel hidden" data-tab-panel="Investments">
+      <div class="field tab-date-field">
+        <label for="date-Investments">Date</label>
+        <input id="date-Investments" type="date">
+      </div>
+      <div class="value-rows" id="rows-Investments"></div>
+      <button type="button" class="primary save-tab-btn" data-tab="Investments">Save</button>
+      <div class="msg" id="msg-Investments"></div>
+    </div>
+  </div>
+
+</div>
+
+<div id="account-modal" class="modal-overlay hidden">
+  <div class="modal card">
+    <h2>Add account</h2>
+    <form id="account-form">
+      <div class="field">
+        <label for="new-account-name">Account name</label>
+        <input id="new-account-name" type="text" placeholder="e.g. Vanguard S&S ISA" required>
+      </div>
+      <div class="field">
+        <label for="new-account-type">Type</label>
+        <select id="new-account-type" required>
+          <option value="Savings">Savings</option>
+          <option value="ISA">ISA</option>
+          <option value="Pension">Pension</option>
+        </select>
+      </div>
+      <div class="field savings-field">
+        <label for="new-account-rate">Interest rate (%)</label>
+        <input id="new-account-rate" type="number" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="field savings-field">
+        <label for="new-account-access">Access</label>
+        <select id="new-account-access">
+          <option value="Instant">Instant</option>
+          <option value="Fixed Term">Fixed Term</option>
+        </select>
+      </div>
+      <div class="field savings-field">
+        <label for="new-account-taxable">Taxable</label>
+        <select id="new-account-taxable">
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <div class="field savings-field">
+        <label for="new-account-note">Note</label>
+        <input id="new-account-note" type="text" placeholder="Optional note">
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="account-modal-cancel">Cancel</button>
+        <button type="submit" class="primary">Add account</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  function showFatal(msg) {
+    var el = document.getElementById('fatal-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  window.addEventListener('error', function (e) {
+    showFatal('Something failed to load or run: ' + e.message + ' (' + (e.filename || '') + (e.lineno ? ':' + e.lineno : '') + ')');
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
+<script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
+<script src="app.js" onerror="showFatal('Failed to load app.js')"></script>
+</body>
+</html>

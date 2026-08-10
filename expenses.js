@@ -120,7 +120,7 @@ function computeOccurrences(rangeStart, rangeEnd) {
   const endStr = toISODate(rangeEnd);
   return results
     .filter(r => r.date >= startStr && r.date <= endStr)
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.amount || 0) - (b.amount || 0));
+    .sort((a, b) => a.date.localeCompare(b.date) || (b.amount || 0) - (a.amount || 0));
 }
 
 // ---------- Rendering: expense rows ----------
@@ -228,6 +228,8 @@ function renderMonth() {
   const end = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
   const entries = computeOccurrences(start, end);
 
+  document.getElementById('save-month-btn').disabled = !entries.some(e => !e.recorded);
+
   if (entries.length === 0) {
     empty.classList.remove('hidden');
     totalEl.textContent = '';
@@ -318,7 +320,7 @@ function renderExpensesList() {
   for (const freq of freqs) {
     const freqExpenses = expenses
       .filter(e => e.frequency === freq)
-      .sort((a, b) => a.typical_day - b.typical_day || (a.typical_amount || 0) - (b.typical_amount || 0));
+      .sort((a, b) => a.typical_day - b.typical_day || (b.typical_amount || 0) - (a.typical_amount || 0));
     if (freqExpenses.length === 0) continue;
     const group = document.createElement('div');
     group.className = 'type-group';

@@ -1,0 +1,192 @@
+const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+let debts = [];
+let debtValues = [];
+
+// ---------- Auth ----------
+
+const appView = document.getElementById('app-view');
+
+sb.auth.onAuthStateChange((_event, session) => {
+  if (session) {
+    appView.classList.remove('hidden');
+    document.getElementById('user-email').textContent = session.user.email;
+    loadAll();
+  } else {
+    window.location.href = 'index.html';
+  }
+});
+
+document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
+
+// ---------- Data loading ----------
+
+async function loadAll() {
+  const [{ data: d, error: debtErr }, { data: v, error: valErr }] = await Promise.all([
+    sb.from('debts').select('*').order('name'),
+    sb.from('debt_values').select('*').order('date'),
+  ]);
+  if (debtErr) return alert('Failed to load debts: ' + debtErr.message);
+  if (valErr) return alert('Failed to load debt values: ' + valErr.message);
+  debts = d || [];
+  debtValues = v || [];
+  renderAll();
+}
+
+function latestValueByDebt() {
+  const latest = {};
+  for (const v of debtValues) {
+    const cur = latest[v.debt_id];
+    if (!cur || v.date > cur.date || (v.date === cur.date && v.created_at > cur.created_at)) {
+      latest[v.debt_id] = v;
+    }
+  }
+  return latest;
+}
+
+function renderAll() {
+  renderDebtsList();
+  renderDebtValueRows();
+}
+
+// ---------- Debts list ----------
+
+function renderDebtsList() {
+  const grid = document.getElementById('debts-grid');
+  grid.innerHTML = '';
+  const latest = latestValueByDebt();
+  for (const debt of debts) {
+    const v = latest[debt.id];
+    const details = [];
+    if (v && v.monthly_payment != null) details.push(`${fmtGBP(v.monthly_payment)}/mo`);
+    if (v && v.interest_rate != null) details.push(`${Number(v.interest_rate)}%`);
+    const item = document.createElement('div');
+    item.className = 'account-item editable';
+    item.innerHTML = `
+      <div class="account-item-main">
+        <span class="name">${escapeHtml(debt.name)}</span>
+        <span class="value">${v ? fmtGBP(v.outstanding_amount) : '—'}</span>
+      </div>
+      ${details.length ? `<div class="account-detail">${details.join(' · ')}</div>` : ''}
+    `;
+    item.addEventListener('click', () => openDebtModal(debt));
+    grid.appendChild(item);
+  }
+  if (debts.length === 0) {
+    grid.innerHTML = '<div class="empty">No debts yet — add one to get started.</div>';
+  }
+}
+
+// ---------- Add a value ----------
+
+document.getElementById('debt-value-date').valueAsDate = new Date();
+
+function renderDebtValueRows() {
+  const container = document.getElementById('debt-value-rows');
+  container.innerHTML = '';
+  if (debts.length === 0) {
+    container.innerHTML = '<div class="empty">No debts yet — add one above.</div>';
+    return;
+  }
+  for (const debt of debts) {
+    const row = document.createElement('div');
+    row.className = 'debt-value-row';
+    row.innerHTML = `
+      <span class="name">${escapeHtml(debt.name)}</span>
+      <input type="number" step="0.01" min="0" placeholder="0.00" class="dv-outstanding" data-debt-id="${debt.id}">
+      <input type="number" step="0.01" min="0" placeholder="0.00" class="dv-payment" data-debt-id="${debt.id}">
+      <input type="number" step="0.01" min="0" placeholder="0.0" class="dv-rate" data-debt-id="${debt.id}">
+    `;
+    container.appendChild(row);
+  }
+}
+
+document.getElementById('save-debt-values-btn').addEventListener('click', async () => {
+  const msg = document.getElementById('debt-value-msg');
+  msg.textContent = '';
+  msg.className = 'msg';
+  const date = document.getElementById('debt-value-date').value;
+  if (!date) { msg.textContent = 'Pick a date.'; msg.className = 'msg error'; return; }
+
+  const container = document.getElementById('debt-value-rows');
+  const entries = [];
+  container.querySelectorAll('.dv-outstanding').forEach(input => {
+    if (input.value.trim() === '') return;
+    const debtId = input.dataset.debtId;
+    const payment = container.querySelector(`.dv-payment[data-debt-id="${debtId}"]`);
+    const rate = container.querySelector(`.dv-rate[data-debt-id="${debtId}"]`);
+    entries.push({
+      debt_id: debtId,
+      date,
+      outstanding_amount: input.value,
+      monthly_payment: payment.value === '' ? null : payment.value,
+      interest_rate: rate.value === '' ? null : rate.value,
+    });
+  });
+  if (entries.length === 0) { msg.textContent = 'Enter at least one outstanding amount.'; msg.className = 'msg error'; return; }
+
+  const { data: { user } } = await sb.auth.getUser();
+  const { error } = await sb.from('debt_values').insert(entries.map(e => ({ ...e, user_id: user.id })));
+  if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
+  msg.textContent = 'Saved.';
+  msg.className = 'msg ok';
+  await loadAll();
+});
+
+// ---------- Add / edit debt modal ----------
+
+const debtModal = document.getElementById('debt-modal');
+const debtForm = document.getElementById('debt-form');
+let editingDebtId = null;
+
+function openDebtModal(debt) {
+  debtForm.reset();
+  editingDebtId = debt ? debt.id : null;
+  document.getElementById('debt-modal-title').textContent = debt ? 'Edit debt' : 'Add debt';
+  document.getElementById('debt-modal-submit').textContent = debt ? 'Save changes' : 'Add debt';
+  document.getElementById('debt-modal-delete').classList.toggle('hidden', !editingDebtId);
+  if (debt) document.getElementById('new-debt-name').value = debt.name;
+  debtModal.classList.remove('hidden');
+  document.getElementById('new-debt-name').focus();
+}
+function closeDebtModal() {
+  debtModal.classList.add('hidden');
+}
+
+document.getElementById('add-debt-btn').addEventListener('click', () => openDebtModal());
+document.getElementById('debt-modal-cancel').addEventListener('click', closeDebtModal);
+debtModal.addEventListener('click', (e) => { if (e.target === debtModal) closeDebtModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !debtModal.classList.contains('hidden')) closeDebtModal();
+});
+
+document.getElementById('debt-modal-delete').addEventListener('click', async () => {
+  if (!editingDebtId) return;
+  if (!confirm('Delete this debt and all its recorded values? This can\'t be undone.')) return;
+  const { error } = await sb.from('debts').delete().eq('id', editingDebtId);
+  if (error) return alert('Failed to delete: ' + error.message);
+  closeDebtModal();
+  await loadAll();
+});
+
+debtForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('new-debt-name').value.trim();
+  if (!name) return;
+
+  if (editingDebtId) {
+    const { error } = await sb.from('debts').update({ name }).eq('id', editingDebtId);
+    if (error) return alert('Failed to save changes: ' + error.message);
+  } else {
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb.from('debts').insert({ name, user_id: user.id });
+    if (error) return alert('Failed to add debt: ' + error.message);
+  }
+  closeDebtModal();
+  await loadAll();
+});
