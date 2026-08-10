@@ -225,8 +225,8 @@ function renderStats() {
   incomeTile.className = 'stat-tile';
   incomeTile.innerHTML = `
     <div class="label">Potential Net Income</div>
-    <div class="value">${fmtGBP(netIncomePA)} pa</div>
-    <div class="sub-value">${fmtGBP(netIncomePM)} pm · @${drawdownRate}%</div>
+    <div class="value">${fmtGBP(netIncomePM)} pm</div>
+    <div class="sub-value">${fmtGBP(netIncomePA)} pa · @${drawdownRate}%</div>
   `;
   outlookRow.appendChild(incomeTile);
 }
