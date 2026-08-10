@@ -359,6 +359,7 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .modal #account-form { display: flex; flex-direction: column; gap: 12px; }
 .modal .field input, .modal .field select { width: 100%; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.modal-actions .danger { margin-right: auto; }
 
 .expense-list-header {
   display: flex;
@@ -374,13 +375,19 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .expense-list { display: flex; flex-direction: column; }
 .expense-row { padding: 10px 0; border-bottom: 1px solid var(--gridline); }
 .expense-row:last-child { border-bottom: none; }
-.expense-row.paid {
-  background: color-mix(in srgb, var(--gridline) 35%, transparent);
+.expense-row.editable {
+  cursor: pointer;
   border-radius: 6px;
   padding-left: 8px;
   padding-right: 8px;
   margin-left: -8px;
   margin-right: -8px;
+}
+.expense-row.editable:hover { background: var(--surface-2); }
+.expense-row.editable.paid:hover { background: color-mix(in srgb, var(--gridline) 55%, transparent); }
+.expense-row.paid {
+  background: color-mix(in srgb, var(--gridline) 35%, transparent);
+  border-radius: 6px;
 }
 .expense-row-main, .next8-row { display: flex; align-items: center; gap: 12px; }
 .expense-date { flex: none; width: 84px; font-size: 12px; color: var(--text-muted); }
@@ -401,11 +408,14 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   font-size: 14px;
   color: var(--text-secondary);
 }
-.expense-record { display: flex; gap: 8px; margin: 8px 0 0 96px; }
-.expense-record input { width: 110px; text-align: right; }
-
 .month-nav { display: flex; gap: 6px; }
 .month-nav button { padding: 6px 12px; }
+.month-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
 .month-total {
   margin-top: 12px;
   padding-top: 12px;
@@ -436,8 +446,9 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   .expense-amount { width: 64px; font-size: 13px; }
   .expense-running-total { width: 74px; font-size: 13px; }
   .expense-list-header { font-size: 10px; }
-  .expense-record { margin-left: 0; }
   .month-nav button { padding: 6px 10px; }
+  .month-actions { flex-wrap: wrap; }
+  .month-actions #save-month-btn { width: 100%; }
 }
 
 .hidden { display: none !important; }

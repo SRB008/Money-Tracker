@@ -88,7 +88,7 @@ function computeOccurrences(rangeStart, rangeEnd) {
         });
         if (monthRecs.length > 0) {
           for (const r of monthRecs) {
-            results.push({ expense: exp, date: r.date, amount: Number(r.amount), recorded: true });
+            results.push({ expense: exp, date: r.date, amount: Number(r.amount), recorded: true, occurrenceId: r.id });
           }
         } else {
           const day = Math.min(exp.typical_day, daysInMonth(y, m));
@@ -105,7 +105,7 @@ function computeOccurrences(rangeStart, rangeEnd) {
         const weekRecs = recs.filter(r => toISODate(mondayOf(parseISODate(r.date))) === wKey);
         if (weekRecs.length > 0) {
           for (const r of weekRecs) {
-            results.push({ expense: exp, date: r.date, amount: Number(r.amount), recorded: true });
+            results.push({ expense: exp, date: r.date, amount: Number(r.amount), recorded: true, occurrenceId: r.id });
           }
         } else {
           const date = toISODate(addDays(cursor, exp.typical_day - 1));
@@ -131,7 +131,7 @@ function fmtDayLabel(dateStr) {
 
 function renderExpenseRow(entry) {
   const row = document.createElement('div');
-  row.className = 'expense-row';
+  row.className = 'expense-row editable';
   const amountText = entry.amount != null ? fmtGBP(entry.amount) : '—';
   row.innerHTML = `
     <div class="expense-row-main">
@@ -140,16 +140,7 @@ function renderExpenseRow(entry) {
       <span class="expense-amount ${entry.recorded ? '' : 'projected'}">${amountText}</span>
     </div>
   `;
-  if (!entry.recorded) {
-    const recordDiv = document.createElement('div');
-    recordDiv.className = 'expense-record';
-    recordDiv.innerHTML = `
-      <input type="number" step="0.01" min="0" class="record-amount-input" placeholder="0.00" value="${entry.amount != null ? entry.amount : ''}">
-      <button type="button" class="record-save-btn">Save</button>
-    `;
-    recordDiv.querySelector('.record-save-btn').addEventListener('click', () => recordOccurrence(entry, recordDiv));
-    row.appendChild(recordDiv);
-  }
+  row.addEventListener('click', () => openOccurrenceModal(entry));
   return row;
 }
 
@@ -166,16 +157,41 @@ function renderNext8Row(entry, runningTotal) {
   return row;
 }
 
-async function recordOccurrence(entry, recordDiv) {
-  const input = recordDiv.querySelector('.record-amount-input');
-  const amount = input.value;
-  if (amount === '') return alert('Enter an amount.');
+async function saveMonthDefaults() {
+  const msg = document.getElementById('month-save-msg');
+  msg.className = 'msg';
+
+  const start = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
+  const end = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+  const projected = computeOccurrences(start, end).filter(e => !e.recorded);
+
+  const rows = projected.filter(e => e.amount != null);
+  const skipped = projected.length - rows.length;
+
+  if (rows.length === 0) {
+    msg.textContent = skipped > 0
+      ? 'Nothing saved — those expenses have no typical amount set.'
+      : 'Nothing to save — this month is already fully recorded.';
+    msg.className = 'msg' + (skipped > 0 ? ' error' : '');
+    return;
+  }
+
   const { data: { user } } = await sb.auth.getUser();
-  const { error } = await sb.from('expense_occurrences')
-    .upsert({ expense_id: entry.expense.id, date: entry.date, amount, user_id: user.id }, { onConflict: 'expense_id,date' });
-  if (error) return alert('Failed to save: ' + error.message);
+  const { error } = await sb.from('expense_occurrences').upsert(
+    rows.map(e => ({ expense_id: e.expense.id, date: e.date, amount: e.amount, user_id: user.id })),
+    { onConflict: 'expense_id,date' }
+  );
+  if (error) {
+    msg.textContent = 'Failed to save: ' + error.message;
+    msg.className = 'msg error';
+    return;
+  }
+  msg.textContent = `Saved ${rows.length} expense${rows.length === 1 ? '' : 's'}` +
+    (skipped > 0 ? ` (${skipped} skipped — no typical amount).` : '.');
+  msg.className = 'msg ok';
   await loadAll();
 }
+document.getElementById('save-month-btn').addEventListener('click', saveMonthDefaults);
 
 function renderNext8() {
   const list = document.getElementById('next8-list');
@@ -234,6 +250,61 @@ document.getElementById('month-today').addEventListener('click', () => {
   renderMonth();
 });
 
+// ---------- Edit a single month occurrence ----------
+
+const occurrenceModal = document.getElementById('occurrence-modal');
+const occurrenceForm = document.getElementById('occurrence-form');
+let editingOccurrence = null;
+
+function openOccurrenceModal(entry) {
+  editingOccurrence = { expenseId: entry.expense.id, occurrenceId: entry.occurrenceId || null };
+  document.getElementById('occurrence-modal-title').textContent = entry.expense.name;
+  document.getElementById('occurrence-date').value = entry.date;
+  document.getElementById('occurrence-amount').value = entry.amount != null ? entry.amount : '';
+  document.getElementById('occurrence-modal-delete').classList.toggle('hidden', !editingOccurrence.occurrenceId);
+  occurrenceModal.classList.remove('hidden');
+  document.getElementById('occurrence-amount').focus();
+}
+function closeOccurrenceModal() {
+  occurrenceModal.classList.add('hidden');
+}
+
+document.getElementById('occurrence-modal-cancel').addEventListener('click', closeOccurrenceModal);
+occurrenceModal.addEventListener('click', (e) => { if (e.target === occurrenceModal) closeOccurrenceModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !occurrenceModal.classList.contains('hidden')) closeOccurrenceModal();
+});
+
+document.getElementById('occurrence-modal-delete').addEventListener('click', async () => {
+  if (!editingOccurrence.occurrenceId) return;
+  if (!confirm('Delete this recorded expense? It will go back to showing the typical amount.')) return;
+  const { error } = await sb.from('expense_occurrences').delete().eq('id', editingOccurrence.occurrenceId);
+  if (error) return alert('Failed to delete: ' + error.message);
+  closeOccurrenceModal();
+  await loadAll();
+});
+
+occurrenceForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const date = document.getElementById('occurrence-date').value;
+  const amountVal = document.getElementById('occurrence-amount').value;
+  if (amountVal === '') return alert('Enter an amount.');
+
+  if (editingOccurrence.occurrenceId) {
+    const { error } = await sb.from('expense_occurrences')
+      .update({ date, amount: amountVal })
+      .eq('id', editingOccurrence.occurrenceId);
+    if (error) return alert('Failed to save: ' + error.message);
+  } else {
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb.from('expense_occurrences')
+      .upsert({ expense_id: editingOccurrence.expenseId, date, amount: amountVal, user_id: user.id }, { onConflict: 'expense_id,date' });
+    if (error) return alert('Failed to save: ' + error.message);
+  }
+  closeOccurrenceModal();
+  await loadAll();
+});
+
 // ---------- Expense definitions list ----------
 
 // Shading is a simple calendar check, not tied to recorded payments: if the
@@ -263,7 +334,7 @@ function renderExpensesList() {
     for (const exp of freqExpenses) {
       const paid = isPaidThisPeriod(exp);
       const row = document.createElement('div');
-      row.className = 'expense-row' + (paid ? ' paid' : '');
+      row.className = 'expense-row editable' + (paid ? ' paid' : '');
       const dayLabel = freq === 'Monthly' ? String(exp.typical_day) : WEEKDAY_SHORT[exp.typical_day];
       const amountText = exp.typical_amount != null ? fmtGBP(exp.typical_amount) : '—';
       row.innerHTML = `
@@ -273,6 +344,7 @@ function renderExpensesList() {
           <span class="expense-amount">${amountText}</span>
         </div>
       `;
+      row.addEventListener('click', () => openExpenseModal(exp));
       group.appendChild(row);
     }
     list.appendChild(group);
@@ -282,10 +354,11 @@ function renderExpensesList() {
   }
 }
 
-// ---------- Add expense modal ----------
+// ---------- Add / edit expense modal ----------
 
 const expenseModal = document.getElementById('expense-modal');
 const expenseForm = document.getElementById('expense-form');
+let editingExpenseId = null;
 
 function updateFrequencyFields() {
   const isMonthly = document.getElementById('new-expense-frequency').value === 'Monthly';
@@ -294,8 +367,23 @@ function updateFrequencyFields() {
 }
 document.getElementById('new-expense-frequency').addEventListener('change', updateFrequencyFields);
 
-function openExpenseModal() {
+function openExpenseModal(exp) {
   expenseForm.reset();
+  editingExpenseId = exp ? exp.id : null;
+  document.getElementById('expense-modal-title').textContent = exp ? 'Edit expense' : 'Add expense';
+  document.getElementById('expense-modal-submit').textContent = exp ? 'Save changes' : 'Add expense';
+
+  if (exp) {
+    document.getElementById('new-expense-name').value = exp.name;
+    document.getElementById('new-expense-frequency').value = exp.frequency;
+    if (exp.frequency === 'Monthly') {
+      document.getElementById('new-expense-day-monthly').value = exp.typical_day;
+    } else {
+      document.getElementById('new-expense-day-weekly').value = exp.typical_day;
+    }
+    document.getElementById('new-expense-amount').value = exp.typical_amount != null ? exp.typical_amount : '';
+  }
+
   updateFrequencyFields();
   expenseModal.classList.remove('hidden');
   document.getElementById('new-expense-name').focus();
@@ -304,7 +392,7 @@ function closeExpenseModal() {
   expenseModal.classList.add('hidden');
 }
 
-document.getElementById('add-expense-btn').addEventListener('click', openExpenseModal);
+document.getElementById('add-expense-btn').addEventListener('click', () => openExpenseModal());
 document.getElementById('expense-modal-cancel').addEventListener('click', closeExpenseModal);
 expenseModal.addEventListener('click', (e) => { if (e.target === expenseModal) closeExpenseModal(); });
 document.addEventListener('keydown', (e) => {
@@ -322,10 +410,16 @@ expenseForm.addEventListener('submit', async (e) => {
   if (!typical_day) return alert('Enter a valid day.');
   const amountVal = document.getElementById('new-expense-amount').value;
   const typical_amount = amountVal === '' ? null : amountVal;
+  const record = { name, frequency, typical_day, typical_amount };
 
-  const { data: { user } } = await sb.auth.getUser();
-  const { error } = await sb.from('expenses').insert({ name, frequency, typical_day, typical_amount, user_id: user.id });
-  if (error) return alert('Failed to add expense: ' + error.message);
+  if (editingExpenseId) {
+    const { error } = await sb.from('expenses').update(record).eq('id', editingExpenseId);
+    if (error) return alert('Failed to save changes: ' + error.message);
+  } else {
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb.from('expenses').insert({ ...record, user_id: user.id });
+    if (error) return alert('Failed to add expense: ' + error.message);
+  }
   closeExpenseModal();
   await loadAll();
 });
