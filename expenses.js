@@ -129,9 +129,13 @@ function fmtDayLabel(dateStr) {
   return parseISODate(dateStr).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
+function hasDatePassed(dateStr) {
+  return dateStr <= toISODate(startOfDay(new Date()));
+}
+
 function renderExpenseRow(entry) {
   const row = document.createElement('div');
-  row.className = 'expense-row editable';
+  row.className = 'expense-row editable' + (hasDatePassed(entry.date) ? ' paid' : '');
   const amountText = entry.amount != null ? fmtGBP(entry.amount) : '—';
   row.innerHTML = `
     <div class="expense-row-main">
@@ -307,16 +311,6 @@ occurrenceForm.addEventListener('submit', async (e) => {
 
 // ---------- Expense definitions list ----------
 
-// Shading is a simple calendar check, not tied to recorded payments: if the
-// expense's typical day has already passed this month, assume it's paid.
-// Weekly expenses aren't shaded.
-function isPaidThisPeriod(exp) {
-  if (exp.frequency !== 'Monthly') return false;
-  const today = startOfDay(new Date());
-  const day = Math.min(exp.typical_day, daysInMonth(today.getFullYear(), today.getMonth()));
-  return day <= today.getDate();
-}
-
 function renderExpensesList() {
   const list = document.getElementById('expenses-grid');
   list.innerHTML = '';
@@ -332,9 +326,8 @@ function renderExpensesList() {
     h3.textContent = freq;
     group.appendChild(h3);
     for (const exp of freqExpenses) {
-      const paid = isPaidThisPeriod(exp);
       const row = document.createElement('div');
-      row.className = 'expense-row editable' + (paid ? ' paid' : '');
+      row.className = 'expense-row editable';
       const dayLabel = freq === 'Monthly' ? String(exp.typical_day) : WEEKDAY_SHORT[exp.typical_day];
       const amountText = exp.typical_amount != null ? fmtGBP(exp.typical_amount) : '—';
       row.innerHTML = `
@@ -384,6 +377,7 @@ function openExpenseModal(exp) {
     document.getElementById('new-expense-amount').value = exp.typical_amount != null ? exp.typical_amount : '';
   }
 
+  document.getElementById('expense-modal-delete').classList.toggle('hidden', !editingExpenseId);
   updateFrequencyFields();
   expenseModal.classList.remove('hidden');
   document.getElementById('new-expense-name').focus();
@@ -397,6 +391,15 @@ document.getElementById('expense-modal-cancel').addEventListener('click', closeE
 expenseModal.addEventListener('click', (e) => { if (e.target === expenseModal) closeExpenseModal(); });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !expenseModal.classList.contains('hidden')) closeExpenseModal();
+});
+
+document.getElementById('expense-modal-delete').addEventListener('click', async () => {
+  if (!editingExpenseId) return;
+  if (!confirm('Delete this expense and all its recorded amounts? This can\'t be undone.')) return;
+  const { error } = await sb.from('expenses').delete().eq('id', editingExpenseId);
+  if (error) return alert('Failed to delete: ' + error.message);
+  closeExpenseModal();
+  await loadAll();
 });
 
 expenseForm.addEventListener('submit', async (e) => {
