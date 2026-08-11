@@ -496,6 +496,7 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   font-size: 14px;
   color: var(--text-secondary);
 }
+.share-price.fallback { font-style: italic; }
 .share-update-btn {
   flex: none;
   width: 28px;

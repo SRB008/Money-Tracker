@@ -498,12 +498,18 @@ async function fetchSharePrice(tradingCode) {
   return Number(raw) / 100;
 }
 
+// Share ids refreshed via the update icon during this page visit — used to
+// tell a just-fetched price apart from one that's merely sitting in the
+// database from an earlier visit.
+const refreshedShareIds = new Set();
+
 async function updateSharePrice(share, btn) {
   btn.disabled = true;
   try {
     const price = await fetchSharePrice(share.trading_code);
     const { error } = await sb.from('shares').update({ price, updated_at: new Date().toISOString() }).eq('id', share.id);
     if (error) { alert('Failed to save price: ' + error.message); return; }
+    refreshedShareIds.add(share.id);
     await loadAll();
   } catch (err) {
     alert('Failed to fetch price: ' + err.message);
@@ -544,7 +550,7 @@ function renderShares() {
         <span class="expense-date">${escapeHtml(share.trading_code)}</span>
         <span class="expense-name">${escapeHtml(share.title)}</span>
         <span class="expense-amount">${Number(share.quantity).toLocaleString('en-GB')}</span>
-        <span class="share-price">${price != null ? fmtGBP(price) : '—'}</span>
+        <span class="share-price${refreshedShareIds.has(share.id) ? '' : ' fallback'}">${price != null ? fmtGBP(price) : '—'}</span>
         <span class="expense-running-total">${value != null ? fmtGBP(value) : '—'}</span>
         <button type="button" class="share-update-btn" aria-label="Update ${escapeHtml(share.title)} price">&#8635;</button>
       </div>
