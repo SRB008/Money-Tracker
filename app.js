@@ -72,7 +72,6 @@ function renderAll() {
   renderValueTabs();
   renderPerformanceChart();
   renderShares();
-  loadSharePrices();
 }
 
 // ---------- Stats ----------
@@ -225,9 +224,9 @@ const VALUE_TABS = { Savings: ['Savings'], Investments: ['ISA', 'Pension'] };
 document.getElementById('date-Savings').valueAsDate = new Date();
 document.getElementById('date-Investments').valueAsDate = new Date();
 
-document.querySelectorAll('.tab-btn').forEach(btn => {
+document.querySelectorAll('#value-tabs .tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#value-tabs .tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
     btn.classList.add('active');
     document.querySelector(`.tab-panel[data-tab-panel="${btn.dataset.tab}"]`).classList.remove('hidden');
@@ -476,12 +475,10 @@ function buildPerformanceSvg(series, baselineStr, todayStr) {
 }
 
 // ---------- Shares ----------
-// Live prices come from Alpha Vantage's GLOBAL_QUOTE endpoint (same approach as
-// share.html). LSE tickers are quoted in pence, so results are divided by 100.
-// The stored `price` column is used as a fallback while a quote is loading or
-// if the lookup fails (free tier is limited to 25 requests/day, ~5/minute).
-
-const sharePriceCache = {};
+// Prices are stored in the database; each row has its own update icon that
+// fetches the latest quote from Alpha Vantage's GLOBAL_QUOTE endpoint (same
+// approach as share.html) and writes it straight to that share's row — there
+// is no automatic/background lookup.
 
 async function fetchSharePrice(tradingCode) {
   let symbol = tradingCode.trim().toUpperCase();
@@ -501,76 +498,26 @@ async function fetchSharePrice(tradingCode) {
   return Number(raw) / 100;
 }
 
-async function loadSharePrices() {
-  const codes = [...new Set(shares.map(s => s.trading_code))].filter(code => !sharePriceCache[code]);
-  // Fetched one at a time, not in parallel — Alpha Vantage's free tier rejects
-  // simultaneous bursts from the same key, which otherwise left only one
-  // (non-deterministic) request succeeding per page load.
-  for (const code of codes) {
-    sharePriceCache[code] = { loading: true };
-    try {
-      const price = await fetchSharePrice(code);
-      sharePriceCache[code] = { price };
-    } catch (err) {
-      sharePriceCache[code] = { error: err.message };
-    }
-    renderShares();
-    renderStats();
+async function updateSharePrice(share, btn) {
+  btn.disabled = true;
+  try {
+    const price = await fetchSharePrice(share.trading_code);
+    const { error } = await sb.from('shares').update({ price, updated_at: new Date().toISOString() }).eq('id', share.id);
+    if (error) { alert('Failed to save price: ' + error.message); return; }
+    await loadAll();
+  } catch (err) {
+    alert('Failed to fetch price: ' + err.message);
+  } finally {
+    btn.disabled = false;
   }
-}
-
-function sharePriceInfo(share) {
-  const cached = sharePriceCache[share.trading_code];
-  if (cached && cached.price != null) return { price: cached.price, label: fmtGBP(cached.price), error: null, live: true };
-  if (cached && cached.loading) return { price: null, label: '…', error: null, live: false };
-  const price = share.price != null ? Number(share.price) : null;
-  return { price, label: price != null ? fmtGBP(price) : '—', error: cached ? cached.error : null, live: false };
 }
 
 function sharesTotalValue() {
   let total = 0;
   for (const share of shares) {
-    const { price } = sharePriceInfo(share);
-    if (price != null) total += price * Number(share.quantity);
+    if (share.price != null) total += Number(share.price) * Number(share.quantity);
   }
   return total;
-}
-
-document.getElementById('update-shares-btn').addEventListener('click', updateSharePrices);
-
-async function updateSharePrices() {
-  const btn = document.getElementById('update-shares-btn');
-  const updates = shares
-    .map(share => ({ share, cached: sharePriceCache[share.trading_code] }))
-    .filter(({ cached }) => cached && cached.price != null);
-
-  if (updates.length === 0) {
-    alert('No live prices available yet to update.');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Updating...';
-
-  try {
-    const results = await Promise.all(updates.map(({ share, cached }) =>
-      sb.from('shares').update({ price: cached.price, updated_at: new Date().toISOString() }).eq('id', share.id)
-    ));
-    const failed = results.filter(r => r.error);
-    if (failed.length > 0) {
-      alert(`Failed to update ${failed.length} share price(s): ${failed[0].error.message}`);
-      btn.disabled = false;
-      btn.textContent = 'Update';
-    } else {
-      btn.textContent = 'Updated';
-    }
-  } catch (err) {
-    btn.disabled = false;
-    btn.textContent = 'Update';
-    throw err;
-  }
-
-  await loadAll();
 }
 
 function renderShares() {
@@ -586,7 +533,7 @@ function renderShares() {
 
   let total = 0;
   for (const share of shares) {
-    const { price, label: priceLabel, error, live } = sharePriceInfo(share);
+    const price = share.price != null ? Number(share.price) : null;
     const value = price != null ? price * Number(share.quantity) : null;
     if (value != null) total += value;
 
@@ -597,10 +544,15 @@ function renderShares() {
         <span class="expense-date">${escapeHtml(share.trading_code)}</span>
         <span class="expense-name">${escapeHtml(share.title)}</span>
         <span class="expense-amount">${Number(share.quantity).toLocaleString('en-GB')}</span>
-        <span class="share-price${live ? '' : ' fallback'}"${error ? ` title="${escapeHtml(error)}"` : ''}>${priceLabel}</span>
+        <span class="share-price">${price != null ? fmtGBP(price) : '—'}</span>
         <span class="expense-running-total">${value != null ? fmtGBP(value) : '—'}</span>
+        <button type="button" class="share-update-btn" aria-label="Update ${escapeHtml(share.title)} price">&#8635;</button>
       </div>
     `;
+    row.querySelector('.share-update-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      updateSharePrice(share, e.currentTarget);
+    });
     row.addEventListener('click', () => openShareModal(share));
     grid.appendChild(row);
   }

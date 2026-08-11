@@ -496,7 +496,19 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   font-size: 14px;
   color: var(--text-secondary);
 }
-.share-price.fallback { font-style: italic; }
+.share-update-btn {
+  flex: none;
+  width: 28px;
+  border: none;
+  background: none;
+  min-height: auto;
+  padding: 4px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  text-align: right;
+}
+.share-update-btn:hover { filter: none; color: var(--series-1); }
 .expense-running-total {
   flex: none;
   width: 100px;
