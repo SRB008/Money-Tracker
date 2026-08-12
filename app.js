@@ -96,10 +96,11 @@ function renderStats() {
 
   const row = document.getElementById('stat-row-accounts');
   row.innerHTML = '';
-  for (const type of ['Savings', 'ISA', 'Pension']) {
+  for (const type of ['ISA', 'Pension']) {
     row.appendChild(statTile(type, fmtGBP(totals[type] || 0), false));
   }
   row.appendChild(statTile('Shares', fmtGBP(sharesTotal), false));
+  row.appendChild(statTile('Savings', fmtGBP(totals.Savings || 0), false));
 }
 function statTile(label, value, isTotal) {
   const div = document.createElement('div');
@@ -116,7 +117,10 @@ function renderAccounts() {
   const grid = document.getElementById('accounts-grid');
   grid.innerHTML = '';
   const latest = latestValueByAccount();
-  const types = ['Savings', 'ISA', 'Pension'];
+  const types = ['ISA', 'Pension', 'Savings'];
+  const stack = document.createElement('div');
+  stack.className = 'type-group-stack';
+  grid.appendChild(stack);
   for (const type of types) {
     const list = accounts.filter(a => a.type === type);
     if (list.length === 0) continue;
@@ -161,61 +165,17 @@ function renderAccounts() {
       }
       group.appendChild(item);
     });
-    grid.appendChild(group);
+    if (type === 'Savings') {
+      grid.appendChild(group);
+    } else {
+      stack.appendChild(group);
+    }
   }
+  if (stack.children.length === 0) stack.remove();
   if (accounts.length === 0) {
     grid.innerHTML = '<div class="empty">No accounts yet — add one to get started.</div>';
   }
 }
-
-// ---------- Add account modal ----------
-
-const accountModal = document.getElementById('account-modal');
-const accountForm = document.getElementById('account-form');
-
-function updateSavingsFieldsVisibility() {
-  const isSavings = document.getElementById('new-account-type').value === 'Savings';
-  document.querySelectorAll('.savings-field').forEach(f => f.classList.toggle('hidden', !isSavings));
-}
-document.getElementById('new-account-type').addEventListener('change', updateSavingsFieldsVisibility);
-
-function openAccountModal() {
-  accountForm.reset();
-  updateSavingsFieldsVisibility();
-  accountModal.classList.remove('hidden');
-  document.getElementById('new-account-name').focus();
-}
-function closeAccountModal() {
-  accountModal.classList.add('hidden');
-}
-
-document.getElementById('add-account-btn').addEventListener('click', openAccountModal);
-document.getElementById('account-modal-cancel').addEventListener('click', closeAccountModal);
-accountModal.addEventListener('click', (e) => { if (e.target === accountModal) closeAccountModal(); });
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !accountModal.classList.contains('hidden')) closeAccountModal();
-});
-
-accountForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const name = document.getElementById('new-account-name').value.trim();
-  const type = document.getElementById('new-account-type').value;
-  if (!name) return;
-  const record = { name, type };
-  if (type === 'Savings') {
-    const rate = document.getElementById('new-account-rate').value;
-    const note = document.getElementById('new-account-note').value.trim();
-    record.interest_rate = rate === '' ? null : rate;
-    record.access = document.getElementById('new-account-access').value;
-    record.taxable = document.getElementById('new-account-taxable').value === 'Yes';
-    record.note = note === '' ? null : note;
-  }
-  const { data: { user } } = await sb.auth.getUser();
-  const { error } = await sb.from('accounts').insert({ ...record, user_id: user.id });
-  if (error) return alert('Failed to add account: ' + error.message);
-  closeAccountModal();
-  await loadAll();
-});
 
 // ---------- Add value ----------
 

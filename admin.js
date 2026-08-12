@@ -52,6 +52,54 @@ document.getElementById('save-drawdown-btn').addEventListener('click', async () 
   msg.className = 'msg ok';
 });
 
+// ---------- Add account modal ----------
+
+const accountModal = document.getElementById('account-modal');
+const accountForm = document.getElementById('account-form');
+
+function updateSavingsFieldsVisibility() {
+  const isSavings = document.getElementById('new-account-type').value === 'Savings';
+  document.querySelectorAll('.savings-field').forEach(f => f.classList.toggle('hidden', !isSavings));
+}
+document.getElementById('new-account-type').addEventListener('change', updateSavingsFieldsVisibility);
+
+function openAccountModal() {
+  accountForm.reset();
+  updateSavingsFieldsVisibility();
+  accountModal.classList.remove('hidden');
+  document.getElementById('new-account-name').focus();
+}
+function closeAccountModal() {
+  accountModal.classList.add('hidden');
+}
+
+document.getElementById('add-account-btn').addEventListener('click', openAccountModal);
+document.getElementById('account-modal-cancel').addEventListener('click', closeAccountModal);
+accountModal.addEventListener('click', (e) => { if (e.target === accountModal) closeAccountModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !accountModal.classList.contains('hidden')) closeAccountModal();
+});
+
+accountForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('new-account-name').value.trim();
+  const type = document.getElementById('new-account-type').value;
+  if (!name) return;
+  const record = { name, type };
+  if (type === 'Savings') {
+    const rate = document.getElementById('new-account-rate').value;
+    const note = document.getElementById('new-account-note').value.trim();
+    record.interest_rate = rate === '' ? null : rate;
+    record.access = document.getElementById('new-account-access').value;
+    record.taxable = document.getElementById('new-account-taxable').value === 'Yes';
+    record.note = note === '' ? null : note;
+  }
+  const { data: { user } } = await sb.auth.getUser();
+  const { error } = await sb.from('accounts').insert({ ...record, user_id: user.id });
+  if (error) return alert('Failed to add account: ' + error.message);
+  closeAccountModal();
+});
+
 // ---------- Shares ----------
 
 async function loadShares() {

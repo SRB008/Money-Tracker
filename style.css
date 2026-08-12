@@ -95,11 +95,6 @@ header.app-header {
 
 .page-tabs { margin-bottom: 0; }
 
-.admin-header-left { display: flex; align-items: baseline; gap: 14px; }
-.page-title { font-size: 20px; font-weight: 600; margin: 0; }
-.back-link { color: var(--text-secondary); font-size: 14px; text-decoration: none; }
-.back-link:hover { color: var(--series-1); text-decoration: underline; }
-
 .admin-setting-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .admin-setting-label { font-size: 14px; }
 .input-suffix-wrap { position: relative; }
@@ -221,6 +216,11 @@ form.row {
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 16px;
   margin-bottom: 16px;
+}
+.type-group-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 .type-group h3 {
   font-size: 13px;
@@ -354,6 +354,8 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   position: relative;
 }
 .tab-btn:hover { filter: none; color: var(--text-primary); }
+.tab-btn-icon { padding: 9px 12px; }
+.tab-btn-icon svg { display: block; }
 .tab-btn.active {
   background: var(--surface-1);
   color: var(--series-1);

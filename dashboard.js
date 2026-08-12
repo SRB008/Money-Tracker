@@ -203,10 +203,11 @@ function renderStats() {
 
   const accountsRow = document.getElementById('stat-row-accounts');
   accountsRow.innerHTML = '';
-  for (const type of ['Savings', 'ISA', 'Pension']) {
+  for (const type of ['ISA', 'Pension']) {
     accountsRow.appendChild(statTile(type, fmtGBP(totals[type] || 0), false));
   }
   accountsRow.appendChild(statTile('Shares', fmtGBP(sharesTotal), false));
+  accountsRow.appendChild(statTile('Savings', fmtGBP(totals.Savings || 0), false));
 
   const debtRow = document.getElementById('stat-row-debt');
   debtRow.innerHTML = '';
