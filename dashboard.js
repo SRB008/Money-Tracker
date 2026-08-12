@@ -215,7 +215,7 @@ function renderStats() {
 
   const totalRow = document.getElementById('stat-row-total');
   totalRow.innerHTML = '';
-  totalRow.appendChild(statTile('Realisable Financial Net Worth', fmtGBP(netTotal), true));
+  totalRow.appendChild(statTile('Base Financial Net Worth', fmtGBP(netTotal), true));
 
   const netIncomePA = (totals.ISA + totals.Pension * 0.65 - totalDebt) * (drawdownRate / 100);
   const netIncomePM = netIncomePA / 12;
