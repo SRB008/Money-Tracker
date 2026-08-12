@@ -44,6 +44,12 @@
       <h2>Savings Accounts</h2>
       <button type="button" class="primary" id="add-account-btn">Add account</button>
     </div>
+    <div class="expense-list-header">
+      <span class="expense-name"></span>
+      <span class="expense-amount">Rate</span>
+      <span class="share-edit-btn"></span>
+    </div>
+    <div class="expense-list" id="accounts-grid"></div>
   </div>
 
   <div class="card">
@@ -93,7 +99,7 @@
 
 <div id="account-modal" class="modal-overlay hidden">
   <div class="modal card">
-    <h2>Add account</h2>
+    <h2 id="account-modal-title">Add account</h2>
     <form id="account-form">
       <div class="field">
         <label for="new-account-name">Account name</label>
@@ -130,8 +136,9 @@
         <input id="new-account-note" type="text" placeholder="Optional note">
       </div>
       <div class="modal-actions">
+        <button type="button" class="danger hidden" id="account-modal-delete">Delete</button>
         <button type="button" id="account-modal-cancel">Cancel</button>
-        <button type="submit" class="primary">Add account</button>
+        <button type="submit" class="primary" id="account-modal-submit">Add account</button>
       </div>
     </form>
   </div>

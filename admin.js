@@ -7,6 +7,7 @@ function escapeHtml(s) {
 }
 
 let shares = [];
+let accounts = [];
 
 const appView = document.getElementById('app-view');
 
@@ -16,6 +17,7 @@ sb.auth.onAuthStateChange((_event, session) => {
     document.getElementById('user-email').textContent = session.user.email;
     loadSettings();
     loadShares();
+    loadAccounts();
   } else {
     window.location.href = 'index.html';
   }
@@ -56,6 +58,7 @@ document.getElementById('save-drawdown-btn').addEventListener('click', async () 
 
 const accountModal = document.getElementById('account-modal');
 const accountForm = document.getElementById('account-form');
+let editingAccountId = null;
 
 function updateSavingsFieldsVisibility() {
   const isSavings = document.getElementById('new-account-type').value === 'Savings';
@@ -63,8 +66,20 @@ function updateSavingsFieldsVisibility() {
 }
 document.getElementById('new-account-type').addEventListener('change', updateSavingsFieldsVisibility);
 
-function openAccountModal() {
+function openAccountModal(account) {
   accountForm.reset();
+  editingAccountId = account ? account.id : null;
+  document.getElementById('account-modal-title').textContent = account ? 'Edit account' : 'Add account';
+  document.getElementById('account-modal-submit').textContent = account ? 'Save changes' : 'Add account';
+  document.getElementById('account-modal-delete').classList.toggle('hidden', !editingAccountId);
+  if (account) {
+    document.getElementById('new-account-name').value = account.name;
+    document.getElementById('new-account-type').value = account.type;
+    document.getElementById('new-account-rate').value = account.interest_rate != null ? account.interest_rate : '';
+    document.getElementById('new-account-access').value = account.access || 'Instant';
+    document.getElementById('new-account-taxable').value = account.taxable ? 'Yes' : 'No';
+    document.getElementById('new-account-note').value = account.note || '';
+  }
   updateSavingsFieldsVisibility();
   accountModal.classList.remove('hidden');
   document.getElementById('new-account-name').focus();
@@ -73,11 +88,20 @@ function closeAccountModal() {
   accountModal.classList.add('hidden');
 }
 
-document.getElementById('add-account-btn').addEventListener('click', openAccountModal);
+document.getElementById('add-account-btn').addEventListener('click', () => openAccountModal());
 document.getElementById('account-modal-cancel').addEventListener('click', closeAccountModal);
 accountModal.addEventListener('click', (e) => { if (e.target === accountModal) closeAccountModal(); });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !accountModal.classList.contains('hidden')) closeAccountModal();
+});
+
+document.getElementById('account-modal-delete').addEventListener('click', async () => {
+  if (!editingAccountId) return;
+  if (!confirm('Delete this account? This can\'t be undone.')) return;
+  const { error } = await sb.from('accounts').delete().eq('id', editingAccountId);
+  if (error) return alert('Failed to delete: ' + error.message);
+  closeAccountModal();
+  await loadAccounts();
 });
 
 accountForm.addEventListener('submit', async (e) => {
@@ -93,12 +117,59 @@ accountForm.addEventListener('submit', async (e) => {
     record.access = document.getElementById('new-account-access').value;
     record.taxable = document.getElementById('new-account-taxable').value === 'Yes';
     record.note = note === '' ? null : note;
+  } else {
+    record.interest_rate = null;
+    record.access = null;
+    record.taxable = null;
+    record.note = null;
   }
-  const { data: { user } } = await sb.auth.getUser();
-  const { error } = await sb.from('accounts').insert({ ...record, user_id: user.id });
-  if (error) return alert('Failed to add account: ' + error.message);
+
+  if (editingAccountId) {
+    const { error } = await sb.from('accounts').update(record).eq('id', editingAccountId);
+    if (error) return alert('Failed to save changes: ' + error.message);
+  } else {
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb.from('accounts').insert({ ...record, user_id: user.id });
+    if (error) return alert('Failed to add account: ' + error.message);
+  }
   closeAccountModal();
+  await loadAccounts();
 });
+
+// ---------- Savings accounts list ----------
+
+async function loadAccounts() {
+  const { data, error } = await sb.from('accounts').select('*').order('name');
+  if (error) return alert('Failed to load accounts: ' + error.message);
+  accounts = data || [];
+  renderAccounts();
+}
+
+function renderAccounts() {
+  const grid = document.getElementById('accounts-grid');
+  grid.innerHTML = '';
+
+  const savingsAccounts = accounts.filter(a => a.type === 'Savings');
+  if (savingsAccounts.length === 0) {
+    grid.innerHTML = '<div class="empty">No savings accounts yet — add one to get started.</div>';
+    return;
+  }
+
+  for (const account of savingsAccounts) {
+    const row = document.createElement('div');
+    row.className = 'expense-row';
+    row.innerHTML = `
+      <div class="expense-row-main">
+        <span class="expense-name">${escapeHtml(account.name)}</span>
+        <span class="expense-amount">${account.interest_rate != null ? Number(account.interest_rate) + '%' : '—'}</span>
+        <button type="button" class="share-edit-btn" aria-label="Edit ${escapeHtml(account.name)}">&#9998;</button>
+      </div>
+      ${account.note ? `<div class="account-extra"><div class="account-note">${escapeHtml(account.note)}</div></div>` : ''}
+    `;
+    row.querySelector('.share-edit-btn').addEventListener('click', () => openAccountModal(account));
+    grid.appendChild(row);
+  }
+}
 
 // ---------- Shares ----------
 
