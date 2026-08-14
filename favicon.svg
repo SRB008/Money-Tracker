@@ -31,15 +31,6 @@
      inkscape:window-y="-8"
      inkscape:window-maximized="1"
      inkscape:current-layer="svg9" />
-  <rect
-     style="fill:#ffca30;fill-opacity:1;stroke:none;stroke-width:2;stroke-miterlimit:5;paint-order:markers fill stroke"
-     id="rect9"
-     width="88"
-     height="88.000008"
-     x="-5"
-     y="-10"
-     rx="1.2667483"
-     ry="1.2473397" />
   <path
      d="m 35.677686,55.535757 v -5.8984 c -3.5,2.5 -9.3984,4.1992 -16.398,4.1992 -6.9996,0 -13.0000005,-1.6016 -16.3980005,-4.1992 v 5.8984 c 0,3 7,6.3008 16.3980005,6.3008 9.398,0 16.398,-3.3008 16.398,-6.3008 z"
      id="path1"

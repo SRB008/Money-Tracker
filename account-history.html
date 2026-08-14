@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account History</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="fatal-error" class="hidden" style="max-width:600px;margin:60px auto;padding:20px;border:1px solid #d03b3b;border-radius:8px;color:#d03b3b;font-family:system-ui,sans-serif;"></div>
+
+<div id="app-view" class="wrap hidden">
+  <header class="app-header">
+    <nav class="tabs page-tabs">
+      <a href="investments.html" class="tab-btn">&larr; Investments</a>
+    </nav>
+    <div class="user-bar">
+      <span id="user-email"></span>
+      <button id="signout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>Account History</h2>
+
+    <div class="field" style="max-width:320px;margin-bottom:16px;">
+      <label for="account-select">Account</label>
+      <select id="account-select">
+        <option value="">Select an account&hellip;</option>
+      </select>
+    </div>
+
+    <div class="tabs" id="period-tabs">
+      <button type="button" class="tab-btn" data-months="3">3 Months</button>
+      <button type="button" class="tab-btn" data-months="6">6 Months</button>
+      <button type="button" class="tab-btn" data-months="12">12 Months</button>
+    </div>
+
+    <div id="history-empty" class="empty">Select an account and a period to see its history.</div>
+
+    <div class="table-wrap">
+      <table id="history-table" class="hidden">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="value">Value</th>
+          </tr>
+        </thead>
+        <tbody id="history-rows"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function showFatal(msg) {
+    var el = document.getElementById('fatal-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  window.addEventListener('error', function (e) {
+    showFatal('Something failed to load or run: ' + e.message + ' (' + (e.filename || '') + (e.lineno ? ':' + e.lineno : '') + ')');
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
+<script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
+<script src="account-history.js" onerror="showFatal('Failed to load account-history.js')"></script>
+</body>
+</html>

@@ -314,6 +314,10 @@ function computeGrowthSeries(entriesList, baselineStr, todayStr) {
   return points.length >= 2 ? points : null;
 }
 
+// Series keys the user has toggled off via the legend ('__total__' or an
+// account id). Persists across re-renders so it survives data reloads.
+const hiddenSeries = new Set();
+
 function renderPerformanceChart() {
   const wrap = document.getElementById('performance-chart-wrap');
   const empty = document.getElementById('performance-empty');
@@ -345,24 +349,47 @@ function renderPerformanceChart() {
     return;
   }
 
-  const series = [{ label: 'Total', color: 'var(--series-1)', points: totalPoints, isTotal: true }];
+  const series = [{ key: '__total__', label: 'Total', color: 'var(--series-total)', points: totalPoints, isTotal: true }];
   for (const acc of eligibleAccounts) {
     const points = computeGrowthSeries([entriesByAccount[acc.id]], baselineStr, todayStr);
-    if (points) series.push({ label: acc.name, color: seriesColor(accounts.indexOf(acc)), points, isTotal: false });
+    if (points) series.push({ key: acc.id, label: acc.name, color: seriesColor(accounts.indexOf(acc)), points, isTotal: false });
   }
 
   empty.classList.add('hidden');
   wrap.classList.remove('hidden');
 
-  const current = totalPoints[totalPoints.length - 1].pct;
-  currentLabel.textContent = `${current >= 0 ? '+' : ''}${current.toFixed(1)}%`;
-  currentLabel.className = 'performance-current ' + (current >= 0 ? 'positive' : 'negative');
+  const totalHidden = hiddenSeries.has('__total__');
+  if (totalHidden) {
+    currentLabel.textContent = '';
+  } else {
+    const current = totalPoints[totalPoints.length - 1].pct;
+    currentLabel.textContent = `${current >= 0 ? '+' : ''}${current.toFixed(1)}%`;
+    currentLabel.className = 'performance-current ' + (current >= 0 ? 'positive' : 'negative');
+  }
 
-  legend.innerHTML = series.map(s => `
-    <span class="item"><span class="swatch" style="background:${s.color}"></span>${escapeHtml(s.label)}</span>
-  `).join('');
+  legend.innerHTML = series.map(s => {
+    const isOff = hiddenSeries.has(s.key);
+    return `
+    <button type="button" class="item${isOff ? ' off' : ''}" data-key="${escapeHtml(String(s.key))}" aria-pressed="${isOff ? 'true' : 'false'}" aria-label="${isOff ? 'Show' : 'Hide'} ${escapeHtml(s.label)}">
+      <span class="swatch" style="background:${s.color}"></span>${escapeHtml(s.label)}
+    </button>`;
+  }).join('');
+  legend.querySelectorAll('.item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      if (hiddenSeries.has(key)) hiddenSeries.delete(key);
+      else hiddenSeries.add(key);
+      renderPerformanceChart();
+    });
+  });
 
-  svg.innerHTML = buildPerformanceSvg(series, baselineStr, todayStr);
+  const visibleSeries = series.filter(s => !hiddenSeries.has(s.key));
+  if (visibleSeries.length === 0) {
+    svg.innerHTML = `<text x="380" y="130" text-anchor="middle" class="perf-axis-label" style="font-size:13px">All series hidden — click the legend to show one.</text>`;
+    return;
+  }
+
+  svg.innerHTML = buildPerformanceSvg(visibleSeries, baselineStr, todayStr);
 }
 
 function niceStep(range) {
