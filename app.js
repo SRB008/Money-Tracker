@@ -534,9 +534,7 @@ function renderShares() {
     row.className = 'expense-row editable';
     row.innerHTML = `
       <div class="expense-row-main">
-        <span class="expense-date">${escapeHtml(share.trading_code)}</span>
         <span class="expense-name">${escapeHtml(share.title)}</span>
-        <span class="expense-amount">${Number(share.quantity).toLocaleString('en-GB')}</span>
         <span class="share-price${refreshedShareIds.has(share.id) ? '' : ' fallback'}">${price != null ? fmtGBP(price) : '—'}</span>
         <span class="expense-running-total">${value != null ? fmtGBP(value) : '—'}</span>
         <button type="button" class="share-update-btn" aria-label="Update ${escapeHtml(share.title)} price">&#8635;</button>
