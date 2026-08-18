@@ -36,6 +36,7 @@ const RETIREMENT_SETTING_KEYS = {
   dob: 'retirement_dob',
   taxRate: 'retirement_tax_rate',
   statePension: 'retirement_state_pension_enabled',
+  statePensionStartDate: 'retirement_state_pension_start_date',
   clearDebt: 'retirement_clear_debt_enabled',
 };
 
@@ -291,8 +292,8 @@ const STATE_PENSION_BASE = 650;
 const STATE_PENSION_GROWTH_START = new Date(2025, 3, 1);
 const STATE_PENSION_PAYMENT_START = new Date(2035, 3, 1);
 
-function statePensionAmountAt(date, spendRatePct) {
-  if (date < STATE_PENSION_PAYMENT_START) return 0;
+function statePensionAmountAt(date, spendRatePct, paymentStartDate) {
+  if (date < paymentStartDate) return 0;
   let years = date.getFullYear() - STATE_PENSION_GROWTH_START.getFullYear();
   if (date.getMonth() < STATE_PENSION_GROWTH_START.getMonth()) years -= 1;
   if (years < 0) years = 0;
@@ -300,7 +301,7 @@ function statePensionAmountAt(date, spendRatePct) {
   return STATE_PENSION_BASE * Math.pow(1 + rate, years);
 }
 
-function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths, statePensionEnabled) {
+function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths, statePensionEnabled, statePensionStartDate) {
   const taxRate = Math.min(Math.max(taxRatePct, 0), 99) / 100;
   const monthlyGrowth = Math.pow(1 + Math.max(growthPct, 0) / 100, 1 / 12) - 1;
   const spendRate = Math.max(spendRatePct, 0) / 100;
@@ -317,7 +318,7 @@ function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spend
     const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
     let target = spend0 * Math.pow(1 + spendRate, m / 12);
     if (statePensionEnabled) {
-      target = Math.max(0, target - statePensionAmountAt(date, spendRatePct));
+      target = Math.max(0, target - statePensionAmountAt(date, spendRatePct, statePensionStartDate));
     }
 
     const totalAB = isa + pension;
@@ -369,6 +370,7 @@ function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal, totalDebt) 
   const taxRatePct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.taxRate]);
   const dobStr = retirementSettings[RETIREMENT_SETTING_KEYS.dob];
   const statePensionEnabled = retirementSettings[RETIREMENT_SETTING_KEYS.statePension] === 'true';
+  const statePensionStartStr = retirementSettings[RETIREMENT_SETTING_KEYS.statePensionStartDate];
   const clearDebtEnabled = retirementSettings[RETIREMENT_SETTING_KEYS.clearDebt] === 'true';
 
   if (!spend0 || Number.isNaN(potGrowthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct) || !dobStr) {
@@ -378,8 +380,9 @@ function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal, totalDebt) 
   if (clearDebtEnabled) isaTotal = Math.max(0, isaTotal - totalDebt);
   const dob = parseISODateLocal(dobStr);
   const today = new Date();
+  const statePensionStartDate = statePensionStartStr ? parseISODateLocal(statePensionStartStr) : STATE_PENSION_PAYMENT_START;
   const maxMonths = Math.max(12, (100 - ageAt(dob, today).years) * 12);
-  const { depletion } = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, potGrowthPct, spendRatePct, maxMonths, statePensionEnabled);
+  const { depletion } = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, potGrowthPct, spendRatePct, maxMonths, statePensionEnabled, statePensionStartDate);
 
   const ageTile = document.createElement('div');
   ageTile.className = 'stat-tile';

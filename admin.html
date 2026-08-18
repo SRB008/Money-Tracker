@@ -27,20 +27,14 @@
   </header>
 
   <div class="card">
-    <h2>Settings</h2>
+    <h2>Retirement Drawdown</h2>
     <div class="admin-setting-row">
       <label for="drawdown-rate" class="admin-setting-label">Pension Drawdown Rate</label>
       <div class="input-suffix-wrap">
         <input id="drawdown-rate" type="number" step="0.1" min="0" max="100">
         <span class="input-suffix">%</span>
       </div>
-      <button type="button" class="primary" id="save-drawdown-btn">Save</button>
     </div>
-    <div class="msg" id="drawdown-msg"></div>
-  </div>
-
-  <div class="card">
-    <h2>Retirement Drawdown</h2>
     <div class="admin-setting-row">
       <label for="retire-monthly-spend" class="admin-setting-label">Net Monthly Spend, Today (£)</label>
       <input id="retire-monthly-spend" type="number" step="1" min="0">
@@ -58,32 +52,34 @@
         <input id="retire-spend-increase" type="number" step="0.1" min="0" max="100">
         <span class="input-suffix">%</span>
       </div>
-    </div>
-    <div class="admin-setting-row">
-      <label for="retire-dob" class="admin-setting-label">Date of Birth</label>
-      <input id="retire-dob" type="date">
-    </div>
-    <div class="admin-setting-row">
+    </div>	
+	<div class="admin-setting-row">
       <label for="retire-tax-rate" class="admin-setting-label">Tax on Taxable Withdrawals</label>
       <div class="input-suffix-wrap">
         <input id="retire-tax-rate" type="number" step="0.1" min="0" max="100">
         <span class="input-suffix">%</span>
       </div>
-    </div>
+    </div>	
     <div class="admin-setting-row">
-      <label for="retire-state-pension" class="admin-setting-label">State Pension</label>
+      <label for="retire-dob" class="admin-setting-label">Date of Birth</label>
+      <input id="retire-dob" type="date">
+    </div>	
+	<div class="admin-setting-row">
+      <label for="retire-state-pension-date" class="admin-setting-label">State Pension Start Date</label>
+      <input id="retire-state-pension-date" type="date">
+    </div>	
+    <div class="admin-setting-row admin-setting-row--toggle">
+      <label for="retire-state-pension" class="admin-setting-label">Include State Pension</label>
       <input id="retire-state-pension" type="checkbox">
-    </div>
-    <div class="admin-setting-row">
+    </div>	
+    <div class="admin-setting-row admin-setting-row--toggle">
       <label for="retire-clear-debt" class="admin-setting-label">Clear Debt</label>
       <input id="retire-clear-debt" type="checkbox">
     </div>
-    <div class="admin-setting-row">
-      <button type="button" class="primary" id="save-retirement-btn">Save</button>
-    </div>
+    <button type="button" class="primary" id="save-retirement-btn">Save</button>
     <div class="msg" id="retirement-msg"></div>
   </div>
-
+  
   <div class="card">
     <h2>Retirement Runway</h2>
     <p class="retirement-summary" id="retirement-summary"></p>

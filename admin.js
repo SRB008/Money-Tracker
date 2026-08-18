@@ -42,24 +42,6 @@ async function loadSettings() {
   document.getElementById('drawdown-rate').value = rate;
 }
 
-document.getElementById('save-drawdown-btn').addEventListener('click', async () => {
-  const msg = document.getElementById('drawdown-msg');
-  msg.textContent = '';
-  msg.className = 'msg';
-
-  const rateVal = document.getElementById('drawdown-rate').value;
-  if (rateVal === '') { msg.textContent = 'Enter a rate.'; msg.className = 'msg error'; return; }
-
-  const { data: { user } } = await sb.auth.getUser();
-  const { error } = await sb.from('app_settings').upsert(
-    { user_id: user.id, key: 'pension_drawdown_rate', value: rateVal, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id,key' }
-  );
-  if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
-  msg.textContent = 'Saved.';
-  msg.className = 'msg ok';
-});
-
 // ---------- Retirement drawdown ----------
 // Simulates spending down the ISA (non-taxable) and Pension (taxable) pots
 // together: both pots grow monthly at Expected Pot Growth, then that month's
@@ -75,6 +57,7 @@ const RETIREMENT_SETTING_KEYS = {
   dob: 'retirement_dob',
   taxRate: 'retirement_tax_rate',
   statePension: 'retirement_state_pension_enabled',
+  statePensionStartDate: 'retirement_state_pension_start_date',
   clearDebt: 'retirement_clear_debt_enabled',
 };
 const hiddenRetirementSeries = new Set();
@@ -93,6 +76,7 @@ async function loadRetirementSettings() {
   document.getElementById('retire-dob').value = byKey[RETIREMENT_SETTING_KEYS.dob] ?? '';
   document.getElementById('retire-tax-rate').value = byKey[RETIREMENT_SETTING_KEYS.taxRate] ?? '';
   document.getElementById('retire-state-pension').checked = byKey[RETIREMENT_SETTING_KEYS.statePension] === 'true';
+  document.getElementById('retire-state-pension-date').value = byKey[RETIREMENT_SETTING_KEYS.statePensionStartDate] ?? toISODateLocal(STATE_PENSION_PAYMENT_START);
   document.getElementById('retire-clear-debt').checked = byKey[RETIREMENT_SETTING_KEYS.clearDebt] === 'true';
   renderRetirementChart();
 }
@@ -105,12 +89,14 @@ document.getElementById('save-retirement-btn').addEventListener('click', async (
   const { data: { user } } = await sb.auth.getUser();
   const now = new Date().toISOString();
   const rows = [
+    { user_id: user.id, key: 'pension_drawdown_rate', value: document.getElementById('drawdown-rate').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spend, value: document.getElementById('retire-monthly-spend').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.potGrowth, value: document.getElementById('retire-pot-growth').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spendIncrease, value: document.getElementById('retire-spend-increase').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.dob, value: document.getElementById('retire-dob').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.taxRate, value: document.getElementById('retire-tax-rate').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.statePension, value: document.getElementById('retire-state-pension').checked ? 'true' : 'false', updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.statePensionStartDate, value: document.getElementById('retire-state-pension-date').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.clearDebt, value: document.getElementById('retire-clear-debt').checked ? 'true' : 'false', updated_at: now },
   ];
   const { error } = await sb.from('app_settings').upsert(rows, { onConflict: 'user_id,key' });
@@ -178,6 +164,11 @@ function parseISODateLocal(s) {
   return new Date(y, m - 1, d);
 }
 
+function toISODateLocal(d) {
+  const pad2 = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 function ageAt(dob, atDate) {
   let years = atDate.getFullYear() - dob.getFullYear();
   let months = atDate.getMonth() - dob.getMonth();
@@ -194,8 +185,8 @@ const STATE_PENSION_BASE = 650;
 const STATE_PENSION_GROWTH_START = new Date(2025, 3, 1);
 const STATE_PENSION_PAYMENT_START = new Date(2035, 3, 1);
 
-function statePensionAmountAt(date, spendRatePct) {
-  if (date < STATE_PENSION_PAYMENT_START) return 0;
+function statePensionAmountAt(date, spendRatePct, paymentStartDate) {
+  if (date < paymentStartDate) return 0;
   let years = date.getFullYear() - STATE_PENSION_GROWTH_START.getFullYear();
   if (date.getMonth() < STATE_PENSION_GROWTH_START.getMonth()) years -= 1;
   if (years < 0) years = 0;
@@ -203,7 +194,7 @@ function statePensionAmountAt(date, spendRatePct) {
   return STATE_PENSION_BASE * Math.pow(1 + rate, years);
 }
 
-function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths, statePensionEnabled) {
+function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths, statePensionEnabled, statePensionStartDate) {
   const taxRate = Math.min(Math.max(taxRatePct, 0), 99) / 100;
   const monthlyGrowth = Math.pow(1 + Math.max(growthPct, 0) / 100, 1 / 12) - 1;
   const spendRate = Math.max(spendRatePct, 0) / 100;
@@ -221,7 +212,7 @@ function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spend
     const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
     let target = spend0 * Math.pow(1 + spendRate, m / 12);
     if (statePensionEnabled) {
-      target = Math.max(0, target - statePensionAmountAt(date, spendRatePct));
+      target = Math.max(0, target - statePensionAmountAt(date, spendRatePct, statePensionStartDate));
     }
 
     const totalAB = isa + pension;
@@ -361,6 +352,7 @@ function renderRetirementChart() {
   const taxRatePct = parseFloat(document.getElementById('retire-tax-rate').value);
   const dobStr = document.getElementById('retire-dob').value;
   const statePensionEnabled = document.getElementById('retire-state-pension').checked;
+  const statePensionStartStr = document.getElementById('retire-state-pension-date').value;
   const clearDebtEnabled = document.getElementById('retire-clear-debt').checked;
 
   if (!spend0 || Number.isNaN(potGrowthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct)) {
@@ -374,9 +366,10 @@ function renderRetirementChart() {
   let { isaTotal, pensionTotal } = currentPotTotals();
   if (clearDebtEnabled) isaTotal = Math.max(0, isaTotal - currentTotalDebt());
   const dob = dobStr ? parseISODateLocal(dobStr) : null;
+  const statePensionStartDate = statePensionStartStr ? parseISODateLocal(statePensionStartStr) : STATE_PENSION_PAYMENT_START;
   const maxMonths = dob ? Math.max(12, (100 - ageAt(dob, new Date()).years) * 12) : 60 * 12;
 
-  const result = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, potGrowthPct, spendRatePct, maxMonths, statePensionEnabled);
+  const result = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, potGrowthPct, spendRatePct, maxMonths, statePensionEnabled, statePensionStartDate);
 
   empty.classList.add('hidden');
   wrap.classList.remove('hidden');

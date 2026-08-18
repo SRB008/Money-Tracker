@@ -106,7 +106,15 @@ header.app-header {
 .page-tabs::-webkit-scrollbar { display: none; }
 .page-tabs .tab-btn { flex: none; }
 
-.admin-setting-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.admin-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gridline);
+}
+.card .admin-setting-row:first-of-type { padding-top: 0; }
 .admin-setting-label { font-size: 14px; }
 .input-suffix-wrap { position: relative; }
 .input-suffix-wrap input {
@@ -119,6 +127,18 @@ header.app-header {
   width: 100px;
   text-align: right;
 }
+.admin-setting-row > input[type="number"],
+.admin-setting-row > input[type="date"] {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  width: 130px;
+  text-align: right;
+}
+#save-retirement-btn { margin-top: 14px; }
 .input-suffix {
   position: absolute;
   right: 10px;
@@ -570,10 +590,25 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 
   .save-tab-btn,
   #save-debt-values-btn,
+  #save-retirement-btn,
   .modal-actions button {
     width: 100%;
   }
   .modal-actions { flex-direction: column-reverse; }
+
+  .admin-setting-row:not(.admin-setting-row--toggle) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .admin-setting-row:not(.admin-setting-row--toggle) .input-suffix-wrap,
+  .admin-setting-row:not(.admin-setting-row--toggle) > input[type="number"],
+  .admin-setting-row:not(.admin-setting-row--toggle) > input[type="date"] {
+    width: 100%;
+  }
+  .admin-setting-row:not(.admin-setting-row--toggle) .input-suffix-wrap input {
+    width: 100%;
+  }
 
   .card-header { flex-wrap: wrap; }
   #add-account-btn, #add-expense-btn, #add-debt-btn { width: 100%; order: 1; }
