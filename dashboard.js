@@ -31,10 +31,11 @@ let retirementSettings = {};
 
 const RETIREMENT_SETTING_KEYS = {
   spend: 'retirement_net_monthly_spend',
-  inflationRate: 'retirement_inflation_rate',
+  potGrowth: 'retirement_pot_growth_rate',
   spendIncrease: 'retirement_spend_increase_rate',
   dob: 'retirement_dob',
   taxRate: 'retirement_tax_rate',
+  statePension: 'retirement_state_pension_enabled',
 };
 
 // ---------- Auth ----------
@@ -281,7 +282,24 @@ function durationLabel(totalMonths) {
   return y + 'y ' + m + 'm';
 }
 
-function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths) {
+// State Pension: a flat £650/month in April-2025 money, uprated once a year
+// every April by the Spend Increase by rate — growth keeps accruing from
+// April 2025 regardless, but nothing is actually paid out (and netted off
+// the spend target) until April 2035, reflecting state pension age (67).
+const STATE_PENSION_BASE = 650;
+const STATE_PENSION_GROWTH_START = new Date(2025, 3, 1);
+const STATE_PENSION_PAYMENT_START = new Date(2035, 3, 1);
+
+function statePensionAmountAt(date, spendRatePct) {
+  if (date < STATE_PENSION_PAYMENT_START) return 0;
+  let years = date.getFullYear() - STATE_PENSION_GROWTH_START.getFullYear();
+  if (date.getMonth() < STATE_PENSION_GROWTH_START.getMonth()) years -= 1;
+  if (years < 0) years = 0;
+  const rate = Math.max(spendRatePct, 0) / 100;
+  return STATE_PENSION_BASE * Math.pow(1 + rate, years);
+}
+
+function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths, statePensionEnabled) {
   const taxRate = Math.min(Math.max(taxRatePct, 0), 99) / 100;
   const monthlyGrowth = Math.pow(1 + Math.max(growthPct, 0) / 100, 1 / 12) - 1;
   const spendRate = Math.max(spendRatePct, 0) / 100;
@@ -295,7 +313,11 @@ function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spend
   for (let m = 0; m < maxMonths; m++) {
     isa *= (1 + monthlyGrowth);
     pension *= (1 + monthlyGrowth);
-    const target = spend0 * Math.pow(1 + spendRate, m / 12);
+    const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
+    let target = spend0 * Math.pow(1 + spendRate, m / 12);
+    if (statePensionEnabled) {
+      target = Math.max(0, target - statePensionAmountAt(date, spendRatePct));
+    }
 
     const totalAB = isa + pension;
     let desiredIsa = 0, desiredPensionNet = 0;
@@ -332,7 +354,6 @@ function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spend
     if (pension < 1e-6) pension = 0;
 
     if (shortfall > 1e-6) {
-      const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
       depletion = { date };
       break;
     }
@@ -342,19 +363,20 @@ function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spend
 
 function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal) {
   const spend0 = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.spend]);
-  const growthPct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.inflationRate]);
+  const potGrowthPct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.potGrowth]);
   const spendRatePct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.spendIncrease]);
   const taxRatePct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.taxRate]);
   const dobStr = retirementSettings[RETIREMENT_SETTING_KEYS.dob];
+  const statePensionEnabled = retirementSettings[RETIREMENT_SETTING_KEYS.statePension] === 'true';
 
-  if (!spend0 || Number.isNaN(growthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct) || !dobStr) {
+  if (!spend0 || Number.isNaN(potGrowthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct) || !dobStr) {
     return;
   }
 
   const dob = parseISODateLocal(dobStr);
   const today = new Date();
   const maxMonths = Math.max(12, (100 - ageAt(dob, today).years) * 12);
-  const { depletion } = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, growthPct, spendRatePct, maxMonths);
+  const { depletion } = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, potGrowthPct, spendRatePct, maxMonths, statePensionEnabled);
 
   const ageTile = document.createElement('div');
   ageTile.className = 'stat-tile';

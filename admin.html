@@ -46,9 +46,9 @@
       <input id="retire-monthly-spend" type="number" step="1" min="0">
     </div>
     <div class="admin-setting-row">
-      <label for="retire-inflation-rate" class="admin-setting-label">Inflation Rate</label>
+      <label for="retire-pot-growth" class="admin-setting-label">Expected Pot Growth</label>
       <div class="input-suffix-wrap">
-        <input id="retire-inflation-rate" type="number" step="0.1" min="0" max="100">
+        <input id="retire-pot-growth" type="number" step="0.1" min="0" max="100">
         <span class="input-suffix">%</span>
       </div>
     </div>
@@ -69,6 +69,10 @@
         <input id="retire-tax-rate" type="number" step="0.1" min="0" max="100">
         <span class="input-suffix">%</span>
       </div>
+    </div>
+    <div class="admin-setting-row">
+      <label for="retire-state-pension" class="admin-setting-label">State Pension</label>
+      <input id="retire-state-pension" type="checkbox">
     </div>
     <div class="admin-setting-row">
       <button type="button" class="primary" id="save-retirement-btn">Save</button>

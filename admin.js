@@ -59,7 +59,7 @@ document.getElementById('save-drawdown-btn').addEventListener('click', async () 
 
 // ---------- Retirement drawdown ----------
 // Simulates spending down the ISA (non-taxable) and Pension (taxable) pots
-// together: both pots grow monthly at the Inflation Rate, then that month's
+// together: both pots grow monthly at Expected Pot Growth, then that month's
 // spend (rising smoothly at Spend Increase by) is drawn from each pot in
 // proportion to its balance. The pension side is grossed up so the tax it
 // loses still leaves the intended net amount in hand; if one pot runs dry
@@ -67,10 +67,11 @@ document.getElementById('save-drawdown-btn').addEventListener('click', async () 
 
 const RETIREMENT_SETTING_KEYS = {
   spend: 'retirement_net_monthly_spend',
-  inflationRate: 'retirement_inflation_rate',
+  potGrowth: 'retirement_pot_growth_rate',
   spendIncrease: 'retirement_spend_increase_rate',
   dob: 'retirement_dob',
   taxRate: 'retirement_tax_rate',
+  statePension: 'retirement_state_pension_enabled',
 };
 const hiddenRetirementSeries = new Set();
 
@@ -83,10 +84,11 @@ async function loadRetirementSettings() {
   const byKey = {};
   for (const row of data || []) byKey[row.key] = row.value;
   document.getElementById('retire-monthly-spend').value = byKey[RETIREMENT_SETTING_KEYS.spend] ?? '';
-  document.getElementById('retire-inflation-rate').value = byKey[RETIREMENT_SETTING_KEYS.inflationRate] ?? '';
+  document.getElementById('retire-pot-growth').value = byKey[RETIREMENT_SETTING_KEYS.potGrowth] ?? '';
   document.getElementById('retire-spend-increase').value = byKey[RETIREMENT_SETTING_KEYS.spendIncrease] ?? '';
   document.getElementById('retire-dob').value = byKey[RETIREMENT_SETTING_KEYS.dob] ?? '';
   document.getElementById('retire-tax-rate').value = byKey[RETIREMENT_SETTING_KEYS.taxRate] ?? '';
+  document.getElementById('retire-state-pension').checked = byKey[RETIREMENT_SETTING_KEYS.statePension] === 'true';
   renderRetirementChart();
 }
 
@@ -99,10 +101,11 @@ document.getElementById('save-retirement-btn').addEventListener('click', async (
   const now = new Date().toISOString();
   const rows = [
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spend, value: document.getElementById('retire-monthly-spend').value, updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.inflationRate, value: document.getElementById('retire-inflation-rate').value, updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.potGrowth, value: document.getElementById('retire-pot-growth').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spendIncrease, value: document.getElementById('retire-spend-increase').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.dob, value: document.getElementById('retire-dob').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.taxRate, value: document.getElementById('retire-tax-rate').value, updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.statePension, value: document.getElementById('retire-state-pension').checked ? 'true' : 'false', updated_at: now },
   ];
   const { error } = await sb.from('app_settings').upsert(rows, { onConflict: 'user_id,key' });
   if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
@@ -149,7 +152,24 @@ function ageAt(dob, atDate) {
   return { years, months };
 }
 
-function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths) {
+// State Pension: a flat £650/month in April-2025 money, uprated once a year
+// every April by the Spend Increase by rate — growth keeps accruing from
+// April 2025 regardless, but nothing is actually paid out (and netted off
+// the spend target) until April 2035, reflecting state pension age (67).
+const STATE_PENSION_BASE = 650;
+const STATE_PENSION_GROWTH_START = new Date(2025, 3, 1);
+const STATE_PENSION_PAYMENT_START = new Date(2035, 3, 1);
+
+function statePensionAmountAt(date, spendRatePct) {
+  if (date < STATE_PENSION_PAYMENT_START) return 0;
+  let years = date.getFullYear() - STATE_PENSION_GROWTH_START.getFullYear();
+  if (date.getMonth() < STATE_PENSION_GROWTH_START.getMonth()) years -= 1;
+  if (years < 0) years = 0;
+  const rate = Math.max(spendRatePct, 0) / 100;
+  return STATE_PENSION_BASE * Math.pow(1 + rate, years);
+}
+
+function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths, statePensionEnabled) {
   const taxRate = Math.min(Math.max(taxRatePct, 0), 99) / 100;
   const monthlyGrowth = Math.pow(1 + Math.max(growthPct, 0) / 100, 1 / 12) - 1;
   const spendRate = Math.max(spendRatePct, 0) / 100;
@@ -164,7 +184,11 @@ function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spend
   for (let m = 0; m < maxMonths; m++) {
     isa *= (1 + monthlyGrowth);
     pension *= (1 + monthlyGrowth);
-    const target = spend0 * Math.pow(1 + spendRate, m / 12);
+    const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
+    let target = spend0 * Math.pow(1 + spendRate, m / 12);
+    if (statePensionEnabled) {
+      target = Math.max(0, target - statePensionAmountAt(date, spendRatePct));
+    }
 
     const totalAB = isa + pension;
     let desiredIsa = 0, desiredPensionNet = 0;
@@ -200,7 +224,6 @@ function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spend
     if (isa < 1e-6) isa = 0;
     if (pension < 1e-6) pension = 0;
 
-    const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
     points.push({ date, isa, pension, total: isa + pension, target });
 
     if (shortfall > 1e-6) {
@@ -299,12 +322,13 @@ function renderRetirementChart() {
   const svg = document.getElementById('retirement-chart');
 
   const spend0 = parseFloat(document.getElementById('retire-monthly-spend').value);
-  const growthPct = parseFloat(document.getElementById('retire-inflation-rate').value);
+  const potGrowthPct = parseFloat(document.getElementById('retire-pot-growth').value);
   const spendRatePct = parseFloat(document.getElementById('retire-spend-increase').value);
   const taxRatePct = parseFloat(document.getElementById('retire-tax-rate').value);
   const dobStr = document.getElementById('retire-dob').value;
+  const statePensionEnabled = document.getElementById('retire-state-pension').checked;
 
-  if (!spend0 || Number.isNaN(growthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct)) {
+  if (!spend0 || Number.isNaN(potGrowthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct)) {
     wrap.classList.add('hidden');
     legend.innerHTML = '';
     summary.textContent = '';
@@ -316,7 +340,7 @@ function renderRetirementChart() {
   const dob = dobStr ? parseISODateLocal(dobStr) : null;
   const maxMonths = dob ? Math.max(12, (100 - ageAt(dob, new Date()).years) * 12) : 60 * 12;
 
-  const result = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, growthPct, spendRatePct, maxMonths);
+  const result = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, potGrowthPct, spendRatePct, maxMonths, statePensionEnabled);
 
   empty.classList.add('hidden');
   wrap.classList.remove('hidden');
