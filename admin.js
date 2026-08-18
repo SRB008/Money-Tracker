@@ -9,6 +9,8 @@ function escapeHtml(s) {
 let shares = [];
 let accounts = [];
 let investmentValues = [];
+let debts = [];
+let debtValues = [];
 
 const appView = document.getElementById('app-view');
 
@@ -21,6 +23,7 @@ sb.auth.onAuthStateChange((_event, session) => {
     loadAccounts();
     loadRetirementSettings();
     loadInvestmentValues();
+    loadDebtsForRetirement();
   } else {
     window.location.href = 'index.html';
   }
@@ -72,6 +75,7 @@ const RETIREMENT_SETTING_KEYS = {
   dob: 'retirement_dob',
   taxRate: 'retirement_tax_rate',
   statePension: 'retirement_state_pension_enabled',
+  clearDebt: 'retirement_clear_debt_enabled',
 };
 const hiddenRetirementSeries = new Set();
 
@@ -89,6 +93,7 @@ async function loadRetirementSettings() {
   document.getElementById('retire-dob').value = byKey[RETIREMENT_SETTING_KEYS.dob] ?? '';
   document.getElementById('retire-tax-rate').value = byKey[RETIREMENT_SETTING_KEYS.taxRate] ?? '';
   document.getElementById('retire-state-pension').checked = byKey[RETIREMENT_SETTING_KEYS.statePension] === 'true';
+  document.getElementById('retire-clear-debt').checked = byKey[RETIREMENT_SETTING_KEYS.clearDebt] === 'true';
   renderRetirementChart();
 }
 
@@ -106,6 +111,7 @@ document.getElementById('save-retirement-btn').addEventListener('click', async (
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.dob, value: document.getElementById('retire-dob').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.taxRate, value: document.getElementById('retire-tax-rate').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.statePension, value: document.getElementById('retire-state-pension').checked ? 'true' : 'false', updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.clearDebt, value: document.getElementById('retire-clear-debt').checked ? 'true' : 'false', updated_at: now },
   ];
   const { error } = await sb.from('app_settings').upsert(rows, { onConflict: 'user_id,key' });
   if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
@@ -118,6 +124,18 @@ async function loadInvestmentValues() {
   const { data, error } = await sb.from('investment_values').select('*').order('date');
   if (error) return alert('Failed to load investment values: ' + error.message);
   investmentValues = data || [];
+  renderRetirementChart();
+}
+
+async function loadDebtsForRetirement() {
+  const [{ data: d, error: debtErr }, { data: dv, error: debtValErr }] = await Promise.all([
+    sb.from('debts').select('*'),
+    sb.from('debt_values').select('*').order('date'),
+  ]);
+  if (debtErr) return alert('Failed to load debts: ' + debtErr.message);
+  if (debtValErr) return alert('Failed to load debt values: ' + debtValErr.message);
+  debts = d || [];
+  debtValues = dv || [];
   renderRetirementChart();
 }
 
@@ -137,6 +155,22 @@ function currentPotTotals() {
     else if (acc.type === 'Pension') pensionTotal += Number(v.value);
   }
   return { isaTotal, pensionTotal };
+}
+
+function currentTotalDebt() {
+  const latest = {};
+  for (const v of debtValues) {
+    const cur = latest[v.debt_id];
+    if (!cur || v.date > cur.date || (v.date === cur.date && v.created_at > cur.created_at)) {
+      latest[v.debt_id] = v;
+    }
+  }
+  let totalDebt = 0;
+  for (const debt of debts) {
+    const v = latest[debt.id];
+    if (v) totalDebt += Number(v.outstanding_amount);
+  }
+  return totalDebt;
 }
 
 function parseISODateLocal(s) {
@@ -327,6 +361,7 @@ function renderRetirementChart() {
   const taxRatePct = parseFloat(document.getElementById('retire-tax-rate').value);
   const dobStr = document.getElementById('retire-dob').value;
   const statePensionEnabled = document.getElementById('retire-state-pension').checked;
+  const clearDebtEnabled = document.getElementById('retire-clear-debt').checked;
 
   if (!spend0 || Number.isNaN(potGrowthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct)) {
     wrap.classList.add('hidden');
@@ -336,7 +371,8 @@ function renderRetirementChart() {
     return;
   }
 
-  const { isaTotal, pensionTotal } = currentPotTotals();
+  let { isaTotal, pensionTotal } = currentPotTotals();
+  if (clearDebtEnabled) isaTotal = Math.max(0, isaTotal - currentTotalDebt());
   const dob = dobStr ? parseISODateLocal(dobStr) : null;
   const maxMonths = dob ? Math.max(12, (100 - ageAt(dob, new Date()).years) * 12) : 60 * 12;
 

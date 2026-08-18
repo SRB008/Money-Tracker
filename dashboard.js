@@ -36,6 +36,7 @@ const RETIREMENT_SETTING_KEYS = {
   dob: 'retirement_dob',
   taxRate: 'retirement_tax_rate',
   statePension: 'retirement_state_pension_enabled',
+  clearDebt: 'retirement_clear_debt_enabled',
 };
 
 // ---------- Auth ----------
@@ -246,7 +247,7 @@ function renderStats() {
   `;
   outlookRow.appendChild(incomeTile);
 
-  renderRetirementOutlook(outlookRow, totals.ISA || 0, totals.Pension || 0);
+  renderRetirementOutlook(outlookRow, totals.ISA || 0, totals.Pension || 0, totalDebt);
 }
 
 // ---------- Retirement outlook ----------
@@ -361,18 +362,20 @@ function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spend
   return { depletion };
 }
 
-function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal) {
+function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal, totalDebt) {
   const spend0 = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.spend]);
   const potGrowthPct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.potGrowth]);
   const spendRatePct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.spendIncrease]);
   const taxRatePct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.taxRate]);
   const dobStr = retirementSettings[RETIREMENT_SETTING_KEYS.dob];
   const statePensionEnabled = retirementSettings[RETIREMENT_SETTING_KEYS.statePension] === 'true';
+  const clearDebtEnabled = retirementSettings[RETIREMENT_SETTING_KEYS.clearDebt] === 'true';
 
   if (!spend0 || Number.isNaN(potGrowthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct) || !dobStr) {
     return;
   }
 
+  if (clearDebtEnabled) isaTotal = Math.max(0, isaTotal - totalDebt);
   const dob = parseISODateLocal(dobStr);
   const today = new Date();
   const maxMonths = Math.max(12, (100 - ageAt(dob, today).years) * 12);
