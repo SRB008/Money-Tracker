@@ -19,6 +19,7 @@
   --series-6: #008300; /* green  */
   --series-7: #4a3aa7; /* violet */
   --series-8: #e34948; /* red    */
+  --series-total: #898781; /* mid grey */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +44,7 @@
     --series-6: #008300;
     --series-7: #9085e9;
     --series-8: #e66767;
+    --series-total: #898781;
   }
 }
 
@@ -67,6 +69,7 @@
   --series-6: #008300;
   --series-7: #9085e9;
   --series-8: #e66767;
+  --series-total: #898781;
 }
 
 * { box-sizing: border-box; }
@@ -322,7 +325,8 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   font-size: 13px;
   color: var(--text-secondary);
 }
-.legend .item { display: flex; align-items: center; gap: 6px; }
+.legend .item { display: flex; align-items: center; gap: 6px; border-color: var(--gridline); }
+.legend .item:not(.off) { border-color: var(--series-1); }
 .legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
 
 .auth-wrap {
