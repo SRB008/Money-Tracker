@@ -8,6 +8,7 @@ function escapeHtml(s) {
 
 let shares = [];
 let accounts = [];
+let investmentValues = [];
 
 const appView = document.getElementById('app-view');
 
@@ -18,6 +19,8 @@ sb.auth.onAuthStateChange((_event, session) => {
     loadSettings();
     loadShares();
     loadAccounts();
+    loadRetirementSettings();
+    loadInvestmentValues();
   } else {
     window.location.href = 'index.html';
   }
@@ -53,6 +56,314 @@ document.getElementById('save-drawdown-btn').addEventListener('click', async () 
   msg.textContent = 'Saved.';
   msg.className = 'msg ok';
 });
+
+// ---------- Retirement drawdown ----------
+// Simulates spending down the ISA (non-taxable) and Pension (taxable) pots
+// together: both pots grow monthly at the Inflation Rate, then that month's
+// spend (rising smoothly at Spend Increase by) is drawn from each pot in
+// proportion to its balance. The pension side is grossed up so the tax it
+// loses still leaves the intended net amount in hand; if one pot runs dry
+// the rest of that month's spend comes from whichever pot still has money.
+
+const RETIREMENT_SETTING_KEYS = {
+  spend: 'retirement_net_monthly_spend',
+  inflationRate: 'retirement_inflation_rate',
+  spendIncrease: 'retirement_spend_increase_rate',
+  dob: 'retirement_dob',
+  taxRate: 'retirement_tax_rate',
+};
+const hiddenRetirementSeries = new Set();
+
+async function loadRetirementSettings() {
+  const { data, error } = await sb
+    .from('app_settings')
+    .select('*')
+    .in('key', Object.values(RETIREMENT_SETTING_KEYS));
+  if (error) return alert('Failed to load retirement settings: ' + error.message);
+  const byKey = {};
+  for (const row of data || []) byKey[row.key] = row.value;
+  document.getElementById('retire-monthly-spend').value = byKey[RETIREMENT_SETTING_KEYS.spend] ?? '';
+  document.getElementById('retire-inflation-rate').value = byKey[RETIREMENT_SETTING_KEYS.inflationRate] ?? '';
+  document.getElementById('retire-spend-increase').value = byKey[RETIREMENT_SETTING_KEYS.spendIncrease] ?? '';
+  document.getElementById('retire-dob').value = byKey[RETIREMENT_SETTING_KEYS.dob] ?? '';
+  document.getElementById('retire-tax-rate').value = byKey[RETIREMENT_SETTING_KEYS.taxRate] ?? '';
+  renderRetirementChart();
+}
+
+document.getElementById('save-retirement-btn').addEventListener('click', async () => {
+  const msg = document.getElementById('retirement-msg');
+  msg.textContent = '';
+  msg.className = 'msg';
+
+  const { data: { user } } = await sb.auth.getUser();
+  const now = new Date().toISOString();
+  const rows = [
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spend, value: document.getElementById('retire-monthly-spend').value, updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.inflationRate, value: document.getElementById('retire-inflation-rate').value, updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spendIncrease, value: document.getElementById('retire-spend-increase').value, updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.dob, value: document.getElementById('retire-dob').value, updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.taxRate, value: document.getElementById('retire-tax-rate').value, updated_at: now },
+  ];
+  const { error } = await sb.from('app_settings').upsert(rows, { onConflict: 'user_id,key' });
+  if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
+  msg.textContent = 'Saved.';
+  msg.className = 'msg ok';
+  renderRetirementChart();
+});
+
+async function loadInvestmentValues() {
+  const { data, error } = await sb.from('investment_values').select('*').order('date');
+  if (error) return alert('Failed to load investment values: ' + error.message);
+  investmentValues = data || [];
+  renderRetirementChart();
+}
+
+function currentPotTotals() {
+  const latest = {};
+  for (const v of investmentValues) {
+    const cur = latest[v.account_id];
+    if (!cur || v.date > cur.date || (v.date === cur.date && v.created_at > cur.created_at)) {
+      latest[v.account_id] = v;
+    }
+  }
+  let isaTotal = 0, pensionTotal = 0;
+  for (const acc of accounts) {
+    const v = latest[acc.id];
+    if (!v) continue;
+    if (acc.type === 'ISA') isaTotal += Number(v.value);
+    else if (acc.type === 'Pension') pensionTotal += Number(v.value);
+  }
+  return { isaTotal, pensionTotal };
+}
+
+function parseISODateLocal(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function ageAt(dob, atDate) {
+  let years = atDate.getFullYear() - dob.getFullYear();
+  let months = atDate.getMonth() - dob.getMonth();
+  if (atDate.getDate() < dob.getDate()) months--;
+  if (months < 0) { years--; months += 12; }
+  return { years, months };
+}
+
+function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths) {
+  const taxRate = Math.min(Math.max(taxRatePct, 0), 99) / 100;
+  const monthlyGrowth = Math.pow(1 + Math.max(growthPct, 0) / 100, 1 / 12) - 1;
+  const spendRate = Math.max(spendRatePct, 0) / 100;
+
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+
+  let isa = isa0, pension = pension0;
+  const points = [{ date: new Date(today.getFullYear(), today.getMonth(), today.getDate()), isa, pension, total: isa + pension }];
+  let depletion = null;
+
+  for (let m = 0; m < maxMonths; m++) {
+    isa *= (1 + monthlyGrowth);
+    pension *= (1 + monthlyGrowth);
+    const target = spend0 * Math.pow(1 + spendRate, m / 12);
+
+    const totalAB = isa + pension;
+    let desiredIsa = 0, desiredPensionNet = 0;
+    if (totalAB > 0) {
+      desiredIsa = target * isa / totalAB;
+      desiredPensionNet = target * pension / totalAB;
+    } else {
+      desiredIsa = target;
+    }
+    const desiredPensionGross = desiredPensionNet / (1 - taxRate);
+
+    let actualIsa = Math.min(desiredIsa, isa);
+    let shortfall = desiredIsa - actualIsa;
+    let actualPensionGross = Math.min(desiredPensionGross, pension);
+    const actualPensionNet = actualPensionGross * (1 - taxRate);
+    shortfall += desiredPensionNet - actualPensionNet;
+
+    let remainingIsa = isa - actualIsa;
+    let remainingPension = pension - actualPensionGross;
+    if (shortfall > 1e-9) {
+      const extraIsa = Math.min(shortfall, remainingIsa);
+      actualIsa += extraIsa; shortfall -= extraIsa; remainingIsa -= extraIsa;
+      if (shortfall > 1e-9) {
+        const extraPensionGross = Math.min(shortfall / (1 - taxRate), remainingPension);
+        actualPensionGross += extraPensionGross;
+        shortfall -= extraPensionGross * (1 - taxRate);
+        remainingPension -= extraPensionGross;
+      }
+    }
+
+    isa -= actualIsa;
+    pension -= actualPensionGross;
+    if (isa < 1e-6) isa = 0;
+    if (pension < 1e-6) pension = 0;
+
+    const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
+    points.push({ date, isa, pension, total: isa + pension, target });
+
+    if (shortfall > 1e-6) {
+      depletion = { date };
+      break;
+    }
+  }
+  return { points, depletion };
+}
+
+function retirementNiceStep(range) {
+  const rough = range / 5;
+  const mag = Math.pow(10, Math.floor(Math.log10(rough || 1)));
+  const norm = rough / mag;
+  const step = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return step * mag;
+}
+
+function retirementNiceCeil(x) {
+  if (x <= 0) return 1;
+  const exp = Math.floor(Math.log10(x));
+  const base = Math.pow(10, exp);
+  const f = x / base;
+  const nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+  return nf * base;
+}
+
+function fmtGBPCompact(v) {
+  v = Math.max(0, v);
+  if (v >= 1000) {
+    const k = v / 1000;
+    return '£' + (Number.isInteger(k) ? k : Math.round(k * 10) / 10) + 'k';
+  }
+  return '£' + Math.round(v);
+}
+
+function buildRetirementSvg(series, points, depletion) {
+  const W = 760, H = 260;
+  const pad = { left: 56, right: 16, top: 16, bottom: 28 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  const startMs = points[0].date.getTime();
+  const endMs = points[points.length - 1].date.getTime();
+  const spanMs = Math.max(endMs - startMs, 1);
+  const xScale = (date) => pad.left + ((date.getTime() - startMs) / spanMs) * plotW;
+
+  const allVals = points.flatMap(p => series.map(s => s.valueFn(p)));
+  const yMax = retirementNiceCeil(Math.max(1, ...allVals) * 1.05);
+  const yScale = (v) => pad.top + (1 - v / yMax) * plotH;
+
+  const step = retirementNiceStep(yMax);
+  const gridLines = [];
+  for (let g = 0; g <= yMax; g += step) {
+    const y = yScale(g).toFixed(1);
+    gridLines.push(`<line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" class="perf-gridline" />`);
+    gridLines.push(`<text x="${pad.left - 8}" y="${y}" class="perf-axis-label" text-anchor="end" dominant-baseline="middle">${fmtGBPCompact(g)}</text>`);
+  }
+
+  const spanYears = spanMs / (365.25 * 24 * 3600 * 1000);
+  const tickStepYears = Math.max(1, Math.round(retirementNiceStep(spanYears / 6)));
+  const firstYear = points[0].date.getFullYear();
+  const lastYear = points[points.length - 1].date.getFullYear();
+  const yearTicks = [];
+  for (let y = firstYear; y <= lastYear; y += tickStepYears) {
+    const d = new Date(y, 0, 1);
+    if (d.getTime() < startMs || d.getTime() > endMs) continue;
+    const x = xScale(d).toFixed(1);
+    yearTicks.push(`<line x1="${x}" y1="${pad.top}" x2="${x}" y2="${H - pad.bottom}" class="perf-gridline" />`);
+    yearTicks.push(`<text x="${x}" y="${H - 8}" class="perf-axis-label" text-anchor="middle">${y}</text>`);
+  }
+
+  const zeroY = yScale(0).toFixed(1);
+  const seriesSvg = series.map(s => {
+    const linePoints = points.map(p => `${xScale(p.date).toFixed(1)},${yScale(s.valueFn(p)).toFixed(1)}`).join(' ');
+    const area = s.isTotal
+      ? `<polygon points="${xScale(points[0].date).toFixed(1)},${zeroY} ${linePoints} ${xScale(points[points.length - 1].date).toFixed(1)},${zeroY}" class="perf-area" style="fill:color-mix(in srgb, ${s.color} 15%, transparent)" />`
+      : '';
+    return `${area}<polyline points="${linePoints}" class="perf-line" style="stroke:${s.color};stroke-width:${s.isTotal ? 2.5 : 1.5}" />`;
+  }).join('');
+
+  let marker = '';
+  if (depletion) {
+    const dx = xScale(depletion.date).toFixed(1);
+    marker = `<line x1="${dx}" y1="${pad.top}" x2="${dx}" y2="${H - pad.bottom}" stroke="var(--critical)" stroke-width="1.5" stroke-dasharray="3 3" />`;
+  }
+
+  return `${gridLines.join('')}${yearTicks.join('')}${seriesSvg}${marker}`;
+}
+
+function renderRetirementChart() {
+  const wrap = document.getElementById('retirement-chart-wrap');
+  const empty = document.getElementById('retirement-empty');
+  const summary = document.getElementById('retirement-summary');
+  const legend = document.getElementById('retirement-legend');
+  const svg = document.getElementById('retirement-chart');
+
+  const spend0 = parseFloat(document.getElementById('retire-monthly-spend').value);
+  const growthPct = parseFloat(document.getElementById('retire-inflation-rate').value);
+  const spendRatePct = parseFloat(document.getElementById('retire-spend-increase').value);
+  const taxRatePct = parseFloat(document.getElementById('retire-tax-rate').value);
+  const dobStr = document.getElementById('retire-dob').value;
+
+  if (!spend0 || Number.isNaN(growthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct)) {
+    wrap.classList.add('hidden');
+    legend.innerHTML = '';
+    summary.textContent = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+
+  const { isaTotal, pensionTotal } = currentPotTotals();
+  const dob = dobStr ? parseISODateLocal(dobStr) : null;
+  const maxMonths = dob ? Math.max(12, (100 - ageAt(dob, new Date()).years) * 12) : 60 * 12;
+
+  const result = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, growthPct, spendRatePct, maxMonths);
+
+  empty.classList.add('hidden');
+  wrap.classList.remove('hidden');
+
+  if (result.depletion) {
+    const d = result.depletion.date;
+    const dateLabel = d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+    if (dob) {
+      const age = ageAt(dob, d);
+      summary.textContent = `Runs out around ${dateLabel} — you'll be ${age.years}${age.months ? ' years ' + age.months + ' mo' : ' years'} old.`;
+    } else {
+      summary.textContent = `Runs out around ${dateLabel}.`;
+    }
+  } else {
+    summary.textContent = `Still growing after ${Math.floor(maxMonths / 12)} years under these assumptions.`;
+  }
+
+  const series = [
+    { key: 'total', label: 'Total', color: 'var(--series-total)', isTotal: true, valueFn: p => p.total },
+    { key: 'isa', label: 'ISA', color: 'var(--series-1)', isTotal: false, valueFn: p => p.isa },
+    { key: 'pension', label: 'Pension', color: 'var(--series-2)', isTotal: false, valueFn: p => p.pension },
+  ];
+
+  legend.innerHTML = series.map(s => {
+    const isOff = hiddenRetirementSeries.has(s.key);
+    return `
+    <button type="button" class="item${isOff ? ' off' : ''}" data-key="${s.key}" aria-pressed="${isOff ? 'true' : 'false'}" aria-label="${isOff ? 'Show' : 'Hide'} ${s.label}">
+      <span class="swatch" style="background:${s.color}"></span>${s.label}
+    </button>`;
+  }).join('');
+  legend.querySelectorAll('.item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      if (hiddenRetirementSeries.has(key)) hiddenRetirementSeries.delete(key);
+      else hiddenRetirementSeries.add(key);
+      renderRetirementChart();
+    });
+  });
+
+  const visibleSeries = series.filter(s => !hiddenRetirementSeries.has(s.key));
+  if (visibleSeries.length === 0) {
+    svg.innerHTML = `<text x="380" y="130" text-anchor="middle" class="perf-axis-label" style="font-size:13px">All series hidden — click the legend to show one.</text>`;
+    return;
+  }
+
+  svg.innerHTML = buildRetirementSvg(visibleSeries, result.points, result.depletion);
+}
 
 // ---------- Add account modal ----------
 
@@ -143,6 +454,7 @@ async function loadAccounts() {
   if (error) return alert('Failed to load accounts: ' + error.message);
   accounts = data || [];
   renderAccounts();
+  renderRetirementChart();
 }
 
 function renderAccounts() {

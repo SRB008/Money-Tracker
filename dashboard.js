@@ -27,6 +27,15 @@ let debts = [];
 let debtValues = [];
 let shares = [];
 let drawdownRate = 4;
+let retirementSettings = {};
+
+const RETIREMENT_SETTING_KEYS = {
+  spend: 'retirement_net_monthly_spend',
+  inflationRate: 'retirement_inflation_rate',
+  spendIncrease: 'retirement_spend_increase_rate',
+  dob: 'retirement_dob',
+  taxRate: 'retirement_tax_rate',
+};
 
 // ---------- Auth ----------
 
@@ -109,6 +118,7 @@ async function loadAll() {
     { data: dv, error: debtValErr },
     { data: setting, error: settingErr },
     { data: shr, error: shrErr },
+    { data: retSettings, error: retSettingsErr },
   ] = await Promise.all([
     sb.from('accounts').select('*').order('type').order('name'),
     sb.from('investment_values').select('*').order('date'),
@@ -118,6 +128,7 @@ async function loadAll() {
     sb.from('debt_values').select('*').order('date'),
     sb.from('app_settings').select('*').eq('key', 'pension_drawdown_rate').maybeSingle(),
     sb.from('shares').select('*').order('title'),
+    sb.from('app_settings').select('*').in('key', Object.values(RETIREMENT_SETTING_KEYS)),
   ]);
   if (accErr) return alert('Failed to load accounts: ' + accErr.message);
   if (valErr) return alert('Failed to load values: ' + valErr.message);
@@ -126,6 +137,7 @@ async function loadAll() {
   if (debtErr) return alert('Failed to load debts: ' + debtErr.message);
   if (debtValErr) return alert('Failed to load debt values: ' + debtValErr.message);
   if (shrErr) return alert('Failed to load shares: ' + shrErr.message);
+  if (retSettingsErr) return alert('Failed to load retirement settings: ' + retSettingsErr.message);
   accounts = acc || [];
   values = val || [];
   expenses = exps || [];
@@ -134,6 +146,8 @@ async function loadAll() {
   debtValues = dv || [];
   shares = shr || [];
   drawdownRate = (!settingErr && setting) ? Number(setting.value) : 4;
+  retirementSettings = {};
+  for (const row of retSettings || []) retirementSettings[row.key] = row.value;
   renderAll();
 }
 
@@ -230,7 +244,152 @@ function renderStats() {
     <div class="sub-value">${fmtGBP(netIncomePA)} pa · @${drawdownRate}%</div>
   `;
   outlookRow.appendChild(incomeTile);
+
+  renderRetirementOutlook(outlookRow, totals.ISA || 0, totals.Pension || 0);
 }
+
+// ---------- Retirement outlook ----------
+// Mirrors the simulation on the Admin page's Retirement Runway chart, using
+// the same saved settings, to surface just the runout age and time remaining.
+
+function parseISODateLocal(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function ageAt(dob, atDate) {
+  let years = atDate.getFullYear() - dob.getFullYear();
+  let months = atDate.getMonth() - dob.getMonth();
+  if (atDate.getDate() < dob.getDate()) months--;
+  if (months < 0) { years--; months += 12; }
+  return { years, months };
+}
+
+function monthDiff(from, to) {
+  let years = to.getFullYear() - from.getFullYear();
+  let months = to.getMonth() - from.getMonth();
+  if (to.getDate() < from.getDate()) months--;
+  let total = years * 12 + months;
+  return total < 0 ? 0 : total;
+}
+
+function durationLabel(totalMonths) {
+  const y = Math.floor(totalMonths / 12);
+  const m = totalMonths % 12;
+  if (y === 0) return m + (m === 1 ? ' month' : ' months');
+  if (m === 0) return y + (y === 1 ? ' year' : ' years');
+  return y + 'y ' + m + 'm';
+}
+
+function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths) {
+  const taxRate = Math.min(Math.max(taxRatePct, 0), 99) / 100;
+  const monthlyGrowth = Math.pow(1 + Math.max(growthPct, 0) / 100, 1 / 12) - 1;
+  const spendRate = Math.max(spendRatePct, 0) / 100;
+
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+
+  let isa = isa0, pension = pension0;
+  let depletion = null;
+
+  for (let m = 0; m < maxMonths; m++) {
+    isa *= (1 + monthlyGrowth);
+    pension *= (1 + monthlyGrowth);
+    const target = spend0 * Math.pow(1 + spendRate, m / 12);
+
+    const totalAB = isa + pension;
+    let desiredIsa = 0, desiredPensionNet = 0;
+    if (totalAB > 0) {
+      desiredIsa = target * isa / totalAB;
+      desiredPensionNet = target * pension / totalAB;
+    } else {
+      desiredIsa = target;
+    }
+    const desiredPensionGross = desiredPensionNet / (1 - taxRate);
+
+    let actualIsa = Math.min(desiredIsa, isa);
+    let shortfall = desiredIsa - actualIsa;
+    let actualPensionGross = Math.min(desiredPensionGross, pension);
+    const actualPensionNet = actualPensionGross * (1 - taxRate);
+    shortfall += desiredPensionNet - actualPensionNet;
+
+    let remainingIsa = isa - actualIsa;
+    let remainingPension = pension - actualPensionGross;
+    if (shortfall > 1e-9) {
+      const extraIsa = Math.min(shortfall, remainingIsa);
+      actualIsa += extraIsa; shortfall -= extraIsa; remainingIsa -= extraIsa;
+      if (shortfall > 1e-9) {
+        const extraPensionGross = Math.min(shortfall / (1 - taxRate), remainingPension);
+        actualPensionGross += extraPensionGross;
+        shortfall -= extraPensionGross * (1 - taxRate);
+        remainingPension -= extraPensionGross;
+      }
+    }
+
+    isa -= actualIsa;
+    pension -= actualPensionGross;
+    if (isa < 1e-6) isa = 0;
+    if (pension < 1e-6) pension = 0;
+
+    if (shortfall > 1e-6) {
+      const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
+      depletion = { date };
+      break;
+    }
+  }
+  return { depletion };
+}
+
+function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal) {
+  const spend0 = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.spend]);
+  const growthPct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.inflationRate]);
+  const spendRatePct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.spendIncrease]);
+  const taxRatePct = parseFloat(retirementSettings[RETIREMENT_SETTING_KEYS.taxRate]);
+  const dobStr = retirementSettings[RETIREMENT_SETTING_KEYS.dob];
+
+  if (!spend0 || Number.isNaN(growthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct) || !dobStr) {
+    return;
+  }
+
+  const dob = parseISODateLocal(dobStr);
+  const today = new Date();
+  const maxMonths = Math.max(12, (100 - ageAt(dob, today).years) * 12);
+  const { depletion } = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, growthPct, spendRatePct, maxMonths);
+
+  const ageTile = document.createElement('div');
+  ageTile.className = 'stat-tile';
+  const durationTile = document.createElement('div');
+  durationTile.className = 'stat-tile';
+
+  if (depletion) {
+    const age = ageAt(dob, depletion.date);
+    const dateLabel = depletion.date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+    const months = monthDiff(today, depletion.date);
+    const ageValue = age.months ? `${age.years}y ${age.months}m` : `${age.years}`;
+    ageTile.innerHTML = `
+      <div class="label">At Salary, Ok Until Age</div>
+      <div class="value">${ageValue}</div>
+      <div class="sub-value">${dateLabel}</div>
+    `;
+    durationTile.innerHTML = `
+      <div class="label">At Salary, Ok For</div>
+      <div class="value">${durationLabel(months)}</div>
+    `;
+  } else {
+    ageTile.innerHTML = `
+      <div class="label">At Salary, Ok Until Age</div>
+      <div class="value">100+</div>
+      <div class="sub-value">Not within projection</div>
+    `;
+    durationTile.innerHTML = `
+      <div class="label">At Salary, Ok For</div>
+      <div class="value">${Math.floor(maxMonths / 12)}+ years</div>
+    `;
+  }
+  outlookRow.appendChild(ageTile);
+  outlookRow.appendChild(durationTile);
+}
+
 function statTile(label, value, isTotal, extraClass) {
   const div = document.createElement('div');
   div.className = 'stat-tile' + (isTotal ? ' total' : '') + (extraClass ? ' ' + extraClass : '');

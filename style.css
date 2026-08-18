@@ -553,6 +553,8 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .performance-current.negative { color: var(--critical); }
 
 #performance-chart-wrap { width: 100%; }
+#retirement-chart-wrap { width: 100%; }
+.retirement-summary { color: var(--text-secondary); font-size: 14px; margin: 4px 0 14px; }
 #performance-chart { width: 100%; height: auto; display: block; }
 .perf-gridline { stroke: var(--gridline); stroke-width: 1; }
 .perf-zeroline { stroke: var(--text-muted); stroke-width: 1.5; }

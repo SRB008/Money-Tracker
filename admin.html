@@ -40,6 +40,53 @@
   </div>
 
   <div class="card">
+    <h2>Retirement Drawdown</h2>
+    <div class="admin-setting-row">
+      <label for="retire-monthly-spend" class="admin-setting-label">Net Monthly Spend, Today (£)</label>
+      <input id="retire-monthly-spend" type="number" step="1" min="0">
+    </div>
+    <div class="admin-setting-row">
+      <label for="retire-inflation-rate" class="admin-setting-label">Inflation Rate</label>
+      <div class="input-suffix-wrap">
+        <input id="retire-inflation-rate" type="number" step="0.1" min="0" max="100">
+        <span class="input-suffix">%</span>
+      </div>
+    </div>
+    <div class="admin-setting-row">
+      <label for="retire-spend-increase" class="admin-setting-label">Spend Increase by</label>
+      <div class="input-suffix-wrap">
+        <input id="retire-spend-increase" type="number" step="0.1" min="0" max="100">
+        <span class="input-suffix">%</span>
+      </div>
+    </div>
+    <div class="admin-setting-row">
+      <label for="retire-dob" class="admin-setting-label">Date of Birth</label>
+      <input id="retire-dob" type="date">
+    </div>
+    <div class="admin-setting-row">
+      <label for="retire-tax-rate" class="admin-setting-label">Tax on Taxable Withdrawals</label>
+      <div class="input-suffix-wrap">
+        <input id="retire-tax-rate" type="number" step="0.1" min="0" max="100">
+        <span class="input-suffix">%</span>
+      </div>
+    </div>
+    <div class="admin-setting-row">
+      <button type="button" class="primary" id="save-retirement-btn">Save</button>
+    </div>
+    <div class="msg" id="retirement-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Retirement Runway</h2>
+    <p class="retirement-summary" id="retirement-summary"></p>
+    <div id="retirement-chart-wrap">
+      <svg id="retirement-chart" viewBox="0 0 760 260" preserveAspectRatio="none"></svg>
+      <div class="legend" id="retirement-legend"></div>
+    </div>
+    <div id="retirement-empty" class="empty hidden">Add a Net Monthly Spend (and your ISA/Pension accounts) above to see your retirement runway.</div>
+  </div>
+
+  <div class="card">
     <div class="card-header">
       <h2>Savings Accounts</h2>
       <button type="button" class="primary" id="add-account-btn">Add account</button>
