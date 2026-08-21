@@ -225,6 +225,11 @@ button:disabled { opacity: 0.5; cursor: default; }
 .stat-tile.total .value { color: var(--series-1); }
 .stat-tile.debt .value { color: var(--critical); }
 
+.clickable-card { cursor: pointer; }
+.clickable-card:hover { border-color: var(--text-secondary); }
+.clickable-row.stat-row { cursor: pointer; }
+.clickable-row .stat-tile:hover { border-color: var(--text-secondary); }
+
 form.row {
   display: flex;
   flex-wrap: wrap;

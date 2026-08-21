@@ -72,6 +72,7 @@ async function loadHistory() {
   const empty = document.getElementById('history-empty');
   const table = document.getElementById('history-table');
   const rows = document.getElementById('history-rows');
+  const contributionTh = document.getElementById('history-contribution-th');
 
   if (!accountId) {
     empty.textContent = 'Select an account to see its history.';
@@ -80,12 +81,16 @@ async function loadHistory() {
     return;
   }
 
+  const account = accounts.find(a => a.id === accountId);
+  const showContribution = account && (account.type === 'ISA' || account.type === 'Pension');
+  contributionTh.classList.toggle('hidden', !showContribution);
+
   const today = new Date();
   const from = new Date(today.getFullYear(), today.getMonth() - selectedMonths, today.getDate());
   const fromStr = toISODate(from);
 
   const { data, error } = await sb.from('investment_values')
-    .select('date, value')
+    .select('date, value, contribution')
     .eq('account_id', accountId)
     .gte('date', fromStr)
     .order('date', { ascending: false });
@@ -101,6 +106,7 @@ async function loadHistory() {
   rows.innerHTML = data.map(v => `
     <tr>
       <td>${fmtDate(v.date)}</td>
+      ${showContribution ? `<td class="value">${v.contribution != null ? fmtGBP(v.contribution) : '—'}</td>` : ''}
       <td class="value">${fmtGBP(v.value)}</td>
     </tr>
   `).join('');

@@ -97,6 +97,11 @@ authForm.addEventListener('submit', async (e) => {
 
 document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
 
+document.getElementById('next8-card').addEventListener('click', () => { window.location.href = 'expenses.html'; });
+document.getElementById('stat-row-accounts').addEventListener('click', () => { window.location.href = 'investments.html'; });
+document.getElementById('stat-row-debt').addEventListener('click', () => { window.location.href = 'debts.html'; });
+document.getElementById('stat-row-outlook').addEventListener('click', () => { window.location.href = 'admin.html'; });
+
 sb.auth.onAuthStateChange((_event, session) => {
   if (session) {
     authView.classList.add('hidden');
