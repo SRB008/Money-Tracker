@@ -401,6 +401,17 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   z-index: 1;
 }
 
+/* Scrolls horizontally instead of forcing the whole card (and page) wider
+   when there are more tabs than fit — same fix as .page-tabs above. */
+#value-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+#value-tabs::-webkit-scrollbar { display: none; }
+#value-tabs .tab-btn { flex: none; }
+
 .tab-date-field { max-width: 200px; margin-bottom: 14px; }
 
 .tab-panel h3 {
