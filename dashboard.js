@@ -26,6 +26,7 @@ let occurrences = [];
 let debts = [];
 let debtValues = [];
 let shares = [];
+let otherAssets = [];
 let drawdownRate = 4;
 let retirementSettings = {};
 
@@ -126,6 +127,7 @@ async function loadAll() {
     { data: dv, error: debtValErr },
     { data: setting, error: settingErr },
     { data: shr, error: shrErr },
+    { data: oth, error: othErr },
     { data: retSettings, error: retSettingsErr },
   ] = await Promise.all([
     sb.from('accounts').select('*').order('type').order('name'),
@@ -136,6 +138,7 @@ async function loadAll() {
     sb.from('debt_values').select('*').order('date'),
     sb.from('app_settings').select('*').eq('key', 'pension_drawdown_rate').maybeSingle(),
     sb.from('shares').select('*').order('title'),
+    sb.from('other_assets').select('*').order('title'),
     sb.from('app_settings').select('*').in('key', Object.values(RETIREMENT_SETTING_KEYS)),
   ]);
   if (accErr) return alert('Failed to load accounts: ' + accErr.message);
@@ -145,6 +148,7 @@ async function loadAll() {
   if (debtErr) return alert('Failed to load debts: ' + debtErr.message);
   if (debtValErr) return alert('Failed to load debt values: ' + debtValErr.message);
   if (shrErr) return alert('Failed to load shares: ' + shrErr.message);
+  if (othErr) return alert('Failed to load other assets: ' + othErr.message);
   if (retSettingsErr) return alert('Failed to load retirement settings: ' + retSettingsErr.message);
   accounts = acc || [];
   values = val || [];
@@ -153,6 +157,7 @@ async function loadAll() {
   debts = d || [];
   debtValues = dv || [];
   shares = shr || [];
+  otherAssets = oth || [];
   drawdownRate = (!settingErr && setting) ? Number(setting.value) : 4;
   retirementSettings = {};
   for (const row of retSettings || []) retirementSettings[row.key] = row.value;
@@ -200,6 +205,14 @@ function sharesTotalValue() {
   return total;
 }
 
+function otherAssetsValueTotal() {
+  let total = 0;
+  for (const asset of otherAssets) {
+    if (asset.value != null) total += Number(asset.value);
+  }
+  return total;
+}
+
 function renderStats() {
   const latest = latestValueByAccount();
   const totals = { Savings: 0, ISA: 0, Pension: 0 };
@@ -211,8 +224,8 @@ function renderStats() {
       grandTotal += Number(v.value);
     }
   }
-  const sharesTotal = sharesTotalValue();
-  grandTotal += sharesTotal;
+  const otherAssetsTotal = sharesTotalValue() + otherAssetsValueTotal();
+  grandTotal += otherAssetsTotal;
 
   const latestDebt = latestValueByDebt();
   let totalDebt = 0;
@@ -228,7 +241,7 @@ function renderStats() {
   for (const type of ['ISA', 'Pension']) {
     accountsRow.appendChild(statTile(type, fmtGBP(totals[type] || 0), false));
   }
-  accountsRow.appendChild(statTile('Shares', fmtGBP(sharesTotal), false));
+  accountsRow.appendChild(statTile('Other Assets', fmtGBP(otherAssetsTotal), false));
   accountsRow.appendChild(statTile('Savings', fmtGBP(totals.Savings || 0), false));
 
   const debtRow = document.getElementById('stat-row-debt');

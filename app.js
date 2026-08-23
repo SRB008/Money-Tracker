@@ -21,6 +21,7 @@ function startOfDay(d) { const r = new Date(d); r.setHours(0, 0, 0, 0); return r
 let accounts = [];
 let values = [];
 let shares = [];
+let otherAssets = [];
 
 // ---------- Auth ----------
 
@@ -41,17 +42,20 @@ sb.auth.onAuthStateChange((_event, session) => {
 // ---------- Data loading ----------
 
 async function loadAll() {
-  const [{ data: acc, error: accErr }, { data: val, error: valErr }, { data: shr, error: shrErr }] = await Promise.all([
+  const [{ data: acc, error: accErr }, { data: val, error: valErr }, { data: shr, error: shrErr }, { data: oth, error: othErr }] = await Promise.all([
     sb.from('accounts').select('*').order('type').order('name'),
     sb.from('investment_values').select('*').order('date'),
     sb.from('shares').select('*').order('title'),
+    sb.from('other_assets').select('*').order('title'),
   ]);
   if (accErr) return alert('Failed to load accounts: ' + accErr.message);
   if (valErr) return alert('Failed to load values: ' + valErr.message);
   if (shrErr) return alert('Failed to load shares: ' + shrErr.message);
+  if (othErr) return alert('Failed to load other assets: ' + othErr.message);
   accounts = acc || [];
   values = val || [];
   shares = shr || [];
+  otherAssets = oth || [];
   renderAll();
 }
 
@@ -72,6 +76,7 @@ function renderAll() {
   renderValueTabs();
   renderPerformanceChart();
   renderShares();
+  renderOtherAssets();
 }
 
 // ---------- Stats ----------
@@ -87,8 +92,8 @@ function renderStats() {
       grandTotal += Number(v.value);
     }
   }
-  const sharesTotal = sharesTotalValue();
-  grandTotal += sharesTotal;
+  const otherAssetsTotal = sharesTotalValue() + otherAssetsValueTotal();
+  grandTotal += otherAssetsTotal;
 
   const totalRow = document.getElementById('stat-row-total');
   totalRow.innerHTML = '';
@@ -99,7 +104,7 @@ function renderStats() {
   for (const type of ['ISA', 'Pension']) {
     row.appendChild(statTile(type, fmtGBP(totals[type] || 0), false));
   }
-  row.appendChild(statTile('Shares', fmtGBP(sharesTotal), false));
+  row.appendChild(statTile('Other Assets', fmtGBP(otherAssetsTotal), false));
   row.appendChild(statTile('Savings', fmtGBP(totals.Savings || 0), false));
 }
 function statTile(label, value, isTotal) {
@@ -194,7 +199,10 @@ document.querySelectorAll('#value-tabs .tab-btn').forEach(btn => {
 });
 
 document.querySelectorAll('.save-tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => saveTabValues(btn.dataset.tab));
+  btn.addEventListener('click', () => {
+    if (btn.dataset.tab === 'Other') saveOtherAssets();
+    else saveTabValues(btn.dataset.tab);
+  });
 });
 
 function renderValueTabs() {
@@ -254,6 +262,56 @@ async function saveTabValues(tabName) {
   const { data: { user } } = await sb.auth.getUser();
   const { error } = await sb.from('investment_values').insert(entries.map(e => ({ ...e, user_id: user.id })));
   if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
+  msg.textContent = 'Saved.';
+  msg.className = 'msg ok';
+  await loadAll();
+}
+
+// ---------- Other assets ----------
+// Unlike Savings/Investments, "Other" assets have no date history — each row
+// holds a single current value that Save simply overwrites in place.
+
+function otherAssetsValueTotal() {
+  let total = 0;
+  for (const asset of otherAssets) {
+    if (asset.value != null) total += Number(asset.value);
+  }
+  return total;
+}
+
+function renderOtherAssets() {
+  const container = document.getElementById('rows-Other');
+  container.innerHTML = '';
+  if (otherAssets.length === 0) {
+    container.innerHTML = '<div class="empty">No other assets yet — add one in Admin.</div>';
+    return;
+  }
+  for (const asset of otherAssets) {
+    const row = document.createElement('div');
+    row.className = 'value-row';
+    row.innerHTML = `
+      <span class="name">${escapeHtml(asset.title)}</span>
+      <input type="number" step="0.01" min="0" placeholder="0.00" class="value-input" data-asset-id="${asset.id}" value="${asset.value != null ? asset.value : ''}">
+    `;
+    container.appendChild(row);
+  }
+}
+
+async function saveOtherAssets() {
+  const msg = document.getElementById('msg-Other');
+  msg.textContent = '';
+  msg.className = 'msg';
+
+  const container = document.getElementById('rows-Other');
+  const updates = [...container.querySelectorAll('.value-input')]
+    .filter(input => input.value.trim() !== '')
+    .map(input => ({ id: input.dataset.assetId, value: input.value }));
+  if (updates.length === 0) { msg.textContent = 'Enter at least one value.'; msg.className = 'msg error'; return; }
+
+  for (const u of updates) {
+    const { error } = await sb.from('other_assets').update({ value: u.value, updated_at: new Date().toISOString() }).eq('id', u.id);
+    if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
+  }
   msg.textContent = 'Saved.';
   msg.className = 'msg ok';
   await loadAll();

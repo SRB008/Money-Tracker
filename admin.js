@@ -11,6 +11,7 @@ let accounts = [];
 let investmentValues = [];
 let debts = [];
 let debtValues = [];
+let otherAssets = [];
 
 const appView = document.getElementById('app-view');
 
@@ -21,6 +22,7 @@ sb.auth.onAuthStateChange((_event, session) => {
     loadSettings();
     loadShares();
     loadAccounts();
+    loadOtherAssets();
     loadRetirementSettings();
     loadInvestmentValues();
     loadDebtsForRetirement();
@@ -628,4 +630,89 @@ shareForm.addEventListener('submit', async (e) => {
   }
   closeShareModal();
   await loadShares();
+});
+
+// ---------- Other assets ----------
+
+async function loadOtherAssets() {
+  const { data, error } = await sb.from('other_assets').select('*').order('title');
+  if (error) return alert('Failed to load other assets: ' + error.message);
+  otherAssets = data || [];
+  renderOtherAssets();
+}
+
+function renderOtherAssets() {
+  const grid = document.getElementById('other-assets-grid');
+  grid.innerHTML = '';
+
+  if (otherAssets.length === 0) {
+    grid.innerHTML = '<div class="empty">No other assets yet — add one to get started.</div>';
+    return;
+  }
+
+  for (const asset of otherAssets) {
+    const row = document.createElement('div');
+    row.className = 'expense-row';
+    row.innerHTML = `
+      <div class="expense-row-main">
+        <span class="expense-name">${escapeHtml(asset.title)}</span>
+        <button type="button" class="share-edit-btn" aria-label="Edit ${escapeHtml(asset.title)}">&#9998;</button>
+      </div>
+    `;
+    row.querySelector('.share-edit-btn').addEventListener('click', () => openOtherAssetModal(asset));
+    grid.appendChild(row);
+  }
+}
+
+const otherAssetModal = document.getElementById('other-asset-modal');
+const otherAssetForm = document.getElementById('other-asset-form');
+let editingOtherAssetId = null;
+
+function openOtherAssetModal(asset) {
+  otherAssetForm.reset();
+  editingOtherAssetId = asset ? asset.id : null;
+  document.getElementById('other-asset-modal-title').textContent = asset ? 'Edit asset' : 'Add asset';
+  document.getElementById('other-asset-modal-submit').textContent = asset ? 'Save changes' : 'Add asset';
+  document.getElementById('other-asset-modal-delete').classList.toggle('hidden', !editingOtherAssetId);
+  if (asset) {
+    document.getElementById('new-other-asset-title').value = asset.title;
+  }
+  otherAssetModal.classList.remove('hidden');
+  document.getElementById('new-other-asset-title').focus();
+}
+function closeOtherAssetModal() {
+  otherAssetModal.classList.add('hidden');
+}
+
+document.getElementById('add-other-asset-btn').addEventListener('click', () => openOtherAssetModal());
+document.getElementById('other-asset-modal-cancel').addEventListener('click', closeOtherAssetModal);
+otherAssetModal.addEventListener('click', (e) => { if (e.target === otherAssetModal) closeOtherAssetModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !otherAssetModal.classList.contains('hidden')) closeOtherAssetModal();
+});
+
+document.getElementById('other-asset-modal-delete').addEventListener('click', async () => {
+  if (!editingOtherAssetId) return;
+  if (!confirm('Delete this asset? This can\'t be undone.')) return;
+  const { error } = await sb.from('other_assets').delete().eq('id', editingOtherAssetId);
+  if (error) return alert('Failed to delete: ' + error.message);
+  closeOtherAssetModal();
+  await loadOtherAssets();
+});
+
+otherAssetForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const title = document.getElementById('new-other-asset-title').value.trim();
+  if (!title) return;
+
+  if (editingOtherAssetId) {
+    const { error } = await sb.from('other_assets').update({ title }).eq('id', editingOtherAssetId);
+    if (error) return alert('Failed to save changes: ' + error.message);
+  } else {
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb.from('other_assets').insert({ title, user_id: user.id });
+    if (error) return alert('Failed to add asset: ' + error.message);
+  }
+  closeOtherAssetModal();
+  await loadOtherAssets();
 });
