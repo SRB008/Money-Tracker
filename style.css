@@ -435,6 +435,9 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .value-row .name { flex: 1; font-size: 14px; }
 .value-row input { width: 130px; text-align: right; }
 .value-row .current-value { flex: none; width: 130px; text-align: right; font-style: italic; color: var(--text-muted); font-size: 14px; }
+/* On wide screens these wrappers are invisible to layout — name/current-value/inputs
+   act as direct flex children of .value-row so header columns stay aligned. */
+.value-row-top, .value-row-fields { display: contents; }
 
 .value-row-header {
   display: flex;
@@ -632,10 +635,17 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 
   .tab-btn { flex: 1; text-align: center; }
 
-  .value-row input { width: 100px; }
-  .value-row .current-value { width: 100px; }
-  .value-row-header span:not(.value-row-header-name) { width: 100px; }
-  .value-row-header { font-size: 10px; }
+  .value-row-header { display: none; }
+  .value-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .value-row-top, .value-row-fields { display: flex; }
+  .value-row-top { justify-content: space-between; align-items: center; gap: 12px; }
+  .value-row-fields { gap: 10px; }
+  .value-row-fields input { flex: 1; width: auto; }
+  .value-row .current-value { width: auto; }
 
   .expense-date { width: 60px; }
   .expense-amount { width: 64px; font-size: 13px; }

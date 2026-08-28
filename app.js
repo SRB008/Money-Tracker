@@ -231,10 +231,14 @@ function renderValueTabs() {
         row.className = 'value-row';
         const v = latest[acc.id];
         row.innerHTML = `
-          <span class="name">${escapeHtml(acc.name)}</span>
-          ${showCurrent ? `<span class="current-value">${v ? fmtGBP(v.value) : ''}</span>` : ''}
-          <input type="number" step="0.01" min="0" placeholder="0.00" class="value-input" data-account-id="${acc.id}">
-          ${showContribution ? `<input type="number" step="0.01" min="0" placeholder="0.00" class="contribution-input" data-account-id="${acc.id}">` : ''}
+          <div class="value-row-top">
+            <span class="name">${escapeHtml(acc.name)}</span>
+            ${showCurrent ? `<span class="current-value">${v ? fmtGBP(v.value) : ''}</span>` : ''}
+          </div>
+          <div class="value-row-fields">
+            <input type="number" step="0.01" min="0" placeholder="New value" class="value-input" data-account-id="${acc.id}">
+            ${showContribution ? `<input type="number" step="0.01" min="0" placeholder="Contribution" class="contribution-input" data-account-id="${acc.id}">` : ''}
+          </div>
         `;
         container.appendChild(row);
       }
@@ -294,9 +298,13 @@ function renderOtherAssets() {
     const row = document.createElement('div');
     row.className = 'value-row';
     row.innerHTML = `
-      <span class="name">${escapeHtml(asset.title)}</span>
-      <span class="current-value">${asset.value != null ? fmtGBP(asset.value) : ''}</span>
-      <input type="number" step="0.01" min="0" placeholder="0.00" class="value-input" data-asset-id="${asset.id}">
+      <div class="value-row-top">
+        <span class="name">${escapeHtml(asset.title)}</span>
+        <span class="current-value">${asset.value != null ? fmtGBP(asset.value) : ''}</span>
+      </div>
+      <div class="value-row-fields">
+        <input type="number" step="0.01" min="0" placeholder="New value" class="value-input" data-asset-id="${asset.id}">
+      </div>
     `;
     container.appendChild(row);
   }
