@@ -434,6 +434,7 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .value-row:last-child { border-bottom: none; }
 .value-row .name { flex: 1; font-size: 14px; }
 .value-row input { width: 130px; text-align: right; }
+.value-row .current-value { flex: none; width: 130px; text-align: right; font-style: italic; color: var(--text-muted); font-size: 14px; }
 
 .value-row-header {
   display: flex;
@@ -632,6 +633,7 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   .tab-btn { flex: 1; text-align: center; }
 
   .value-row input { width: 100px; }
+  .value-row .current-value { width: 100px; }
   .value-row-header span:not(.value-row-header-name) { width: 100px; }
   .value-row-header { font-size: 10px; }
 
