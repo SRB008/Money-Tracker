@@ -1,6 +1,7 @@
 const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
 const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
+const fmtDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -65,6 +66,7 @@ function renderDebtsList() {
     const details = [];
     if (debt.monthly_payment != null) details.push(`${fmtGBP(debt.monthly_payment)}/mo`);
     if (debt.interest_rate != null) details.push(`${Number(debt.interest_rate)}%`);
+    if (debt.end_date) details.push(`Ends ${fmtDate(debt.end_date)}`);
     const item = document.createElement('div');
     item.className = 'account-item editable';
     item.innerHTML = `
@@ -73,6 +75,7 @@ function renderDebtsList() {
         <span class="value">${v ? fmtGBP(v.outstanding_amount) : '—'}</span>
       </div>
       ${details.length ? `<div class="account-detail">${details.join(' · ')}</div>` : ''}
+      ${debt.note ? `<div class="account-note">${escapeHtml(debt.note)}</div>` : ''}
     `;
     item.addEventListener('click', () => openDebtModal(debt));
     grid.appendChild(item);
@@ -147,6 +150,8 @@ function openDebtModal(debt) {
     document.getElementById('new-debt-name').value = debt.name;
     document.getElementById('new-debt-payment').value = debt.monthly_payment != null ? debt.monthly_payment : '';
     document.getElementById('new-debt-rate').value = debt.interest_rate != null ? debt.interest_rate : '';
+    document.getElementById('new-debt-end-date').value = debt.end_date || '';
+    document.getElementById('new-debt-note').value = debt.note || '';
   }
   debtModal.classList.remove('hidden');
   document.getElementById('new-debt-name').focus();
@@ -177,10 +182,14 @@ debtForm.addEventListener('submit', async (e) => {
   if (!name) return;
   const paymentVal = document.getElementById('new-debt-payment').value;
   const rateVal = document.getElementById('new-debt-rate').value;
+  const endDateVal = document.getElementById('new-debt-end-date').value;
+  const noteVal = document.getElementById('new-debt-note').value.trim();
   const record = {
     name,
     monthly_payment: paymentVal === '' ? null : paymentVal,
     interest_rate: rateVal === '' ? null : rateVal,
+    end_date: endDateVal === '' ? null : endDateVal,
+    note: noteVal === '' ? null : noteVal,
   };
 
   if (editingDebtId) {
