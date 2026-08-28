@@ -206,9 +206,11 @@ document.querySelectorAll('.save-tab-btn').forEach(btn => {
 });
 
 function renderValueTabs() {
+  const latest = latestValueByAccount();
   for (const tabName of Object.keys(VALUE_TABS)) {
     const types = VALUE_TABS[tabName];
     const showContribution = tabName === 'Investments';
+    const showCurrent = tabName === 'Savings' || tabName === 'Investments';
     const container = document.getElementById('rows-' + tabName);
     container.innerHTML = '';
     const tabAccounts = accounts.filter(a => types.includes(a.type));
@@ -227,8 +229,10 @@ function renderValueTabs() {
       for (const acc of list) {
         const row = document.createElement('div');
         row.className = 'value-row';
+        const v = latest[acc.id];
         row.innerHTML = `
           <span class="name">${escapeHtml(acc.name)}</span>
+          ${showCurrent ? `<span class="current-value">${v ? fmtGBP(v.value) : ''}</span>` : ''}
           <input type="number" step="0.01" min="0" placeholder="0.00" class="value-input" data-account-id="${acc.id}">
           ${showContribution ? `<input type="number" step="0.01" min="0" placeholder="0.00" class="contribution-input" data-account-id="${acc.id}">` : ''}
         `;
@@ -291,7 +295,8 @@ function renderOtherAssets() {
     row.className = 'value-row';
     row.innerHTML = `
       <span class="name">${escapeHtml(asset.title)}</span>
-      <input type="number" step="0.01" min="0" placeholder="0.00" class="value-input" data-asset-id="${asset.id}" value="${asset.value != null ? asset.value : ''}">
+      <span class="current-value">${asset.value != null ? fmtGBP(asset.value) : ''}</span>
+      <input type="number" step="0.01" min="0" placeholder="0.00" class="value-input" data-asset-id="${asset.id}">
     `;
     container.appendChild(row);
   }
