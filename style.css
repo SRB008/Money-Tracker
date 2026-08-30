@@ -139,6 +139,12 @@ header.app-header {
   text-align: right;
 }
 #save-retirement-btn { margin-top: 14px; }
+.info-icon-link {
+  display: inline-flex;
+  vertical-align: middle;
+  color: var(--text-secondary);
+}
+.info-icon-link:hover { color: var(--series-1); }
 .input-suffix {
   position: absolute;
   right: 10px;

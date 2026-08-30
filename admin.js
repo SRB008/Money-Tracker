@@ -33,6 +33,12 @@ sb.auth.onAuthStateChange((_event, session) => {
 
 document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
 
+// Net Monthly Spend is displayed and stored as a whole number.
+document.getElementById('retire-monthly-spend').addEventListener('change', (e) => {
+  if (e.target.value === '') return;
+  e.target.value = Math.round(Number(e.target.value));
+});
+
 async function loadSettings() {
   const { data, error } = await sb
     .from('app_settings')
@@ -72,7 +78,8 @@ async function loadRetirementSettings() {
   if (error) return alert('Failed to load retirement settings: ' + error.message);
   const byKey = {};
   for (const row of data || []) byKey[row.key] = row.value;
-  document.getElementById('retire-monthly-spend').value = byKey[RETIREMENT_SETTING_KEYS.spend] ?? '';
+  const spendVal = byKey[RETIREMENT_SETTING_KEYS.spend];
+  document.getElementById('retire-monthly-spend').value = spendVal != null && spendVal !== '' ? Math.round(Number(spendVal)) : '';
   document.getElementById('retire-pot-growth').value = byKey[RETIREMENT_SETTING_KEYS.potGrowth] ?? '';
   document.getElementById('retire-spend-increase').value = byKey[RETIREMENT_SETTING_KEYS.spendIncrease] ?? '';
   document.getElementById('retire-dob').value = byKey[RETIREMENT_SETTING_KEYS.dob] ?? '';
@@ -92,7 +99,7 @@ document.getElementById('save-retirement-btn').addEventListener('click', async (
   const now = new Date().toISOString();
   const rows = [
     { user_id: user.id, key: 'pension_drawdown_rate', value: document.getElementById('drawdown-rate').value, updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spend, value: document.getElementById('retire-monthly-spend').value, updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spend, value: String(Math.round(Number(document.getElementById('retire-monthly-spend').value) || 0)), updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.potGrowth, value: document.getElementById('retire-pot-growth').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spendIncrease, value: document.getElementById('retire-spend-increase').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.dob, value: document.getElementById('retire-dob').value, updated_at: now },

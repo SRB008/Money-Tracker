@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Future Living Costs</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="favicon.png">
+<link rel="stylesheet" href="style.css">
+<style>
+  .cost-amount-raw { width: 130px; }
+  .sort-header {
+    font: inherit;
+    color: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-height: auto;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sort-header:hover { filter: none; color: var(--text-primary); }
+  #sort-yearly.sort-header { justify-content: flex-end; }
+  .sort-arrow { display: inline-flex; opacity: 0.3; }
+  .sort-arrow svg { fill: currentColor; display: block; }
+  .sort-header.sort-active .sort-arrow { opacity: 1; color: var(--series-1); }
+  .sort-header.sort-desc .sort-arrow { transform: rotate(180deg); }
+  @media (max-width: 480px) {
+    .cost-amount-raw { width: 96px; }
+    .expense-amount { width: 64px; font-size: 13px; }
+    .expense-list-header { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="fatal-error" class="hidden" style="max-width:600px;margin:60px auto;padding:20px;border:1px solid #d03b3b;border-radius:8px;color:#d03b3b;font-family:system-ui,sans-serif;"></div>
+
+<!-- Signed-out view -->
+<div id="auth-view" class="auth-wrap hidden">
+  <div class="card">
+    <h2 id="auth-title">Sign in</h2>
+    <form id="auth-form">
+      <div class="field">
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" autocomplete="email" required>
+      </div>
+      <div class="field">
+        <label for="auth-password">Password</label>
+        <input id="auth-password" type="password" autocomplete="current-password" required minlength="6">
+      </div>
+      <button type="submit" class="primary" id="auth-submit">Sign in</button>
+      <div id="auth-msg" class="msg"></div>
+    </form>
+    <div class="auth-toggle">
+      <span id="auth-toggle-text">Need an account?</span>
+      <a id="auth-toggle-link">Sign up</a>
+    </div>
+  </div>
+</div>
+
+<!-- Signed-in view -->
+<div id="app-view" class="wrap hidden">
+  <header class="app-header">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <a href="admin.html" class="btn" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;" aria-label="Back to Admin"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>Admin</a>
+      <h1 style="font-size:20px;margin:0;">Future Living Costs</h1>
+    </div>
+    <div class="user-bar">
+      <span id="user-email"></span>
+      <button id="signout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="stat-row" id="stat-row-totals"></div>
+
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
+    <button type="button" class="primary" id="push-monthly-spend-btn">Update Net Monthly Spend, Today</button>
+    <div class="msg" id="push-monthly-spend-msg"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Costs</h2>
+      <button type="button" class="primary" id="add-cost-btn">Add cost</button>
+    </div>
+    <div class="expense-list-header">
+      <button type="button" class="sort-header expense-name" id="sort-name" data-key="name" aria-label="Sort by name">Name<span class="sort-arrow"><svg width="8" height="8" viewBox="0 0 10 10"><polygon points="5,0 10,10 0,10"/></svg></span></button>
+      <span class="expense-amount cost-amount-raw">Entered as</span>
+      <span class="expense-amount">Monthly</span>
+      <button type="button" class="sort-header expense-amount" id="sort-yearly" data-key="yearly" aria-label="Sort by yearly cost">Yearly<span class="sort-arrow"><svg width="8" height="8" viewBox="0 0 10 10"><polygon points="5,0 10,10 0,10"/></svg></span></button>
+    </div>
+    <div class="expense-list" id="costs-list"></div>
+    <div id="costs-empty" class="empty hidden">No costs yet — add one to get started.</div>
+  </div>
+
+</div>
+
+<div id="cost-modal" class="modal-overlay hidden">
+  <div class="modal card">
+    <h2 id="cost-modal-title">Add cost</h2>
+    <form id="cost-form">
+      <div class="field">
+        <label for="new-cost-name">Name</label>
+        <input id="new-cost-name" type="text" placeholder="e.g. Council tax" required>
+      </div>
+      <div class="field">
+        <label for="new-cost-amount">Amount (£)</label>
+        <input id="new-cost-amount" type="number" step="0.01" min="0" placeholder="0.00" required>
+      </div>
+      <div class="field">
+        <label for="new-cost-frequency">Frequency</label>
+        <select id="new-cost-frequency" required>
+          <option value="monthly">Monthly</option>
+          <option value="yearly">Yearly</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="danger hidden" id="cost-modal-delete">Delete</button>
+        <button type="button" id="cost-modal-cancel">Cancel</button>
+        <button type="submit" class="primary" id="cost-modal-submit">Add cost</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  function showFatal(msg) {
+    var el = document.getElementById('fatal-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  window.addEventListener('error', function (e) {
+    showFatal('Something failed to load or run: ' + e.message + ' (' + (e.filename || '') + (e.lineno ? ':' + e.lineno : '') + ')');
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
+<script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
+<script src="future-living.js" onerror="showFatal('Failed to load future-living.js')"></script>
+</body>
+</html>
