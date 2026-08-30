@@ -1,6 +1,7 @@
 const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 
 const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
+const fmtGBP0 = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n);
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -248,18 +249,18 @@ function renderStats() {
   const accountsRow = document.getElementById('stat-row-accounts');
   accountsRow.innerHTML = '';
   for (const type of ['ISA', 'Pension']) {
-    accountsRow.appendChild(statTile(type, fmtGBP(totals[type] || 0), false));
+    accountsRow.appendChild(statTile(type, fmtGBP0(totals[type] || 0), false));
   }
-  accountsRow.appendChild(statTile('Other Assets', fmtGBP(otherAssetsTotal), false));
-  accountsRow.appendChild(statTile('Savings', fmtGBP(totals.Savings || 0), false));
+  accountsRow.appendChild(statTile('Other Assets', fmtGBP0(otherAssetsTotal), false));
+  accountsRow.appendChild(statTile('Savings', fmtGBP0(totals.Savings || 0), false));
 
   const debtRow = document.getElementById('stat-row-debt');
   debtRow.innerHTML = '';
-  debtRow.appendChild(statTile('Debt', fmtGBP(totalDebt), false, 'debt'));
+  debtRow.appendChild(statTile('Debt', fmtGBP0(totalDebt), false, 'debt'));
 
   const totalRow = document.getElementById('stat-row-total');
   totalRow.innerHTML = '';
-  totalRow.appendChild(statTile('Base Financial Net Worth', fmtGBP(netTotal), true));
+  totalRow.appendChild(statTile('Base Financial Net Worth', fmtGBP0(netTotal), true));
 
   const otherAssetsPensionEnabled = retirementSettings[RETIREMENT_SETTING_KEYS.otherAssetsPension] === 'true';
   const otherAssetsPensionAmt = otherAssetsPensionEnabled ? otherAssetsPensionTotal() : 0;
@@ -274,8 +275,8 @@ function renderStats() {
   incomeTile.className = 'stat-tile';
   incomeTile.innerHTML = `
     <div class="label">Potential Net Income</div>
-    <div class="value">${fmtGBP(netIncomePM)} pm</div>
-    <div class="sub-value">${fmtGBP(netIncomePA)} pa · @${drawdownRate}%</div>
+    <div class="value">${fmtGBP0(netIncomePM)} pm</div>
+    <div class="sub-value">${fmtGBP0(netIncomePA)} pa · @${drawdownRate}%</div>
   `;
   outlookRow.appendChild(incomeTile);
 
