@@ -64,17 +64,21 @@
       <label for="retire-dob" class="admin-setting-label">Date of Birth</label>
       <input id="retire-dob" type="date">
     </div>	
-	<div class="admin-setting-row">
-      <label for="retire-state-pension-date" class="admin-setting-label">State Pension Start Date</label>
-      <input id="retire-state-pension-date" type="date">
-    </div>	
-    <div class="admin-setting-row admin-setting-row--toggle">
-      <label for="retire-state-pension" class="admin-setting-label">Include State Pension</label>
-      <input id="retire-state-pension" type="checkbox">
-    </div>	
+	<div class="admin-setting-row admin-setting-row--toggle">
+      <label for="retire-other-assets-pension" class="admin-setting-label">Include Other Assets in Pension</label>
+      <input id="retire-other-assets-pension" type="checkbox">
+    </div>
     <div class="admin-setting-row admin-setting-row--toggle">
       <label for="retire-clear-debt" class="admin-setting-label">Clear Debt</label>
       <input id="retire-clear-debt" type="checkbox">
+    </div>
+    <div class="admin-setting-row">
+      <label for="retire-state-pension-date" class="admin-setting-label">State Pension Start Date</label>
+      <input id="retire-state-pension-date" type="date">
+    </div>
+    <div class="admin-setting-row admin-setting-row--toggle">
+      <label for="retire-state-pension" class="admin-setting-label">Include State Pension</label>
+      <input id="retire-state-pension" type="checkbox">
     </div>
     <button type="button" class="primary" id="save-retirement-btn">Save</button>
     <div class="msg" id="retirement-msg"></div>
@@ -124,6 +128,7 @@
     </div>
     <div class="expense-list-header">
       <span class="expense-name"></span>
+      <span class="expense-amount">Pension</span>
       <span class="share-edit-btn"></span>
     </div>
     <div class="expense-list" id="other-assets-grid"></div>
@@ -167,6 +172,13 @@
       <div class="field">
         <label for="new-other-asset-title">Asset name</label>
         <input id="new-other-asset-title" type="text" placeholder="e.g. Classic car" required>
+      </div>
+      <div class="field">
+        <label for="new-other-asset-pension">Pension</label>
+        <select id="new-other-asset-pension">
+          <option value="No">No</option>
+          <option value="Yes">Yes</option>
+        </select>
       </div>
       <div class="modal-actions">
         <button type="button" class="danger hidden" id="other-asset-modal-delete">Delete</button>

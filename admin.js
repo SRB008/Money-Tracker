@@ -67,6 +67,7 @@ const RETIREMENT_SETTING_KEYS = {
   statePension: 'retirement_state_pension_enabled',
   statePensionStartDate: 'retirement_state_pension_start_date',
   clearDebt: 'retirement_clear_debt_enabled',
+  otherAssetsPension: 'retirement_other_assets_pension_enabled',
 };
 const hiddenRetirementSeries = new Set();
 
@@ -84,6 +85,7 @@ async function loadRetirementSettings() {
   document.getElementById('retire-spend-increase').value = byKey[RETIREMENT_SETTING_KEYS.spendIncrease] ?? '';
   document.getElementById('retire-dob').value = byKey[RETIREMENT_SETTING_KEYS.dob] ?? '';
   document.getElementById('retire-tax-rate').value = byKey[RETIREMENT_SETTING_KEYS.taxRate] ?? '';
+  document.getElementById('retire-other-assets-pension').checked = byKey[RETIREMENT_SETTING_KEYS.otherAssetsPension] === 'true';
   document.getElementById('retire-state-pension').checked = byKey[RETIREMENT_SETTING_KEYS.statePension] === 'true';
   document.getElementById('retire-state-pension-date').value = byKey[RETIREMENT_SETTING_KEYS.statePensionStartDate] ?? toISODateLocal(STATE_PENSION_PAYMENT_START);
   document.getElementById('retire-clear-debt').checked = byKey[RETIREMENT_SETTING_KEYS.clearDebt] === 'true';
@@ -104,6 +106,7 @@ document.getElementById('save-retirement-btn').addEventListener('click', async (
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spendIncrease, value: document.getElementById('retire-spend-increase').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.dob, value: document.getElementById('retire-dob').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.taxRate, value: document.getElementById('retire-tax-rate').value, updated_at: now },
+    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.otherAssetsPension, value: document.getElementById('retire-other-assets-pension').checked ? 'true' : 'false', updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.statePension, value: document.getElementById('retire-state-pension').checked ? 'true' : 'false', updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.statePensionStartDate, value: document.getElementById('retire-state-pension-date').value, updated_at: now },
     { user_id: user.id, key: RETIREMENT_SETTING_KEYS.clearDebt, value: document.getElementById('retire-clear-debt').checked ? 'true' : 'false', updated_at: now },
@@ -150,6 +153,14 @@ function currentPotTotals() {
     else if (acc.type === 'Pension') pensionTotal += Number(v.value);
   }
   return { isaTotal, pensionTotal };
+}
+
+function otherAssetsPensionTotal() {
+  let total = 0;
+  for (const asset of otherAssets) {
+    if (asset.pension && asset.value != null) total += Number(asset.value);
+  }
+  return total;
 }
 
 function currentTotalDebt() {
@@ -363,6 +374,7 @@ function renderRetirementChart() {
   const statePensionEnabled = document.getElementById('retire-state-pension').checked;
   const statePensionStartStr = document.getElementById('retire-state-pension-date').value;
   const clearDebtEnabled = document.getElementById('retire-clear-debt').checked;
+  const otherAssetsPensionEnabled = document.getElementById('retire-other-assets-pension').checked;
 
   if (!spend0 || Number.isNaN(potGrowthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct)) {
     wrap.classList.add('hidden');
@@ -373,6 +385,9 @@ function renderRetirementChart() {
   }
 
   let { isaTotal, pensionTotal } = currentPotTotals();
+  // "Include Other Assets in Pension" adds other assets flagged pension=true
+  // into the non-taxable (ISA) pot, not the taxable Pension pot.
+  if (otherAssetsPensionEnabled) isaTotal += otherAssetsPensionTotal();
   if (clearDebtEnabled) isaTotal = Math.max(0, isaTotal - currentTotalDebt());
   const dob = dobStr ? parseISODateLocal(dobStr) : null;
   const statePensionStartDate = statePensionStartStr ? parseISODateLocal(statePensionStartStr) : STATE_PENSION_PAYMENT_START;
@@ -646,6 +661,7 @@ async function loadOtherAssets() {
   if (error) return alert('Failed to load other assets: ' + error.message);
   otherAssets = data || [];
   renderOtherAssets();
+  renderRetirementChart();
 }
 
 function renderOtherAssets() {
@@ -663,6 +679,7 @@ function renderOtherAssets() {
     row.innerHTML = `
       <div class="expense-row-main">
         <span class="expense-name">${escapeHtml(asset.title)}</span>
+        <span class="expense-amount">${asset.pension ? 'Yes' : 'No'}</span>
         <button type="button" class="share-edit-btn" aria-label="Edit ${escapeHtml(asset.title)}">&#9998;</button>
       </div>
     `;
@@ -683,6 +700,7 @@ function openOtherAssetModal(asset) {
   document.getElementById('other-asset-modal-delete').classList.toggle('hidden', !editingOtherAssetId);
   if (asset) {
     document.getElementById('new-other-asset-title').value = asset.title;
+    document.getElementById('new-other-asset-pension').value = asset.pension ? 'Yes' : 'No';
   }
   otherAssetModal.classList.remove('hidden');
   document.getElementById('new-other-asset-title').focus();
@@ -711,13 +729,14 @@ otherAssetForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const title = document.getElementById('new-other-asset-title').value.trim();
   if (!title) return;
+  const pension = document.getElementById('new-other-asset-pension').value === 'Yes';
 
   if (editingOtherAssetId) {
-    const { error } = await sb.from('other_assets').update({ title }).eq('id', editingOtherAssetId);
+    const { error } = await sb.from('other_assets').update({ title, pension }).eq('id', editingOtherAssetId);
     if (error) return alert('Failed to save changes: ' + error.message);
   } else {
     const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb.from('other_assets').insert({ title, user_id: user.id });
+    const { error } = await sb.from('other_assets').insert({ title, pension, user_id: user.id });
     if (error) return alert('Failed to add asset: ' + error.message);
   }
   closeOtherAssetModal();

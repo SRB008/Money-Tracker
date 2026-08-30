@@ -39,6 +39,7 @@ const RETIREMENT_SETTING_KEYS = {
   statePension: 'retirement_state_pension_enabled',
   statePensionStartDate: 'retirement_state_pension_start_date',
   clearDebt: 'retirement_clear_debt_enabled',
+  otherAssetsPension: 'retirement_other_assets_pension_enabled',
 };
 
 // ---------- Auth ----------
@@ -213,6 +214,14 @@ function otherAssetsValueTotal() {
   return total;
 }
 
+function otherAssetsPensionTotal() {
+  let total = 0;
+  for (const asset of otherAssets) {
+    if (asset.pension && asset.value != null) total += Number(asset.value);
+  }
+  return total;
+}
+
 function renderStats() {
   const latest = latestValueByAccount();
   const totals = { Savings: 0, ISA: 0, Pension: 0 };
@@ -252,7 +261,11 @@ function renderStats() {
   totalRow.innerHTML = '';
   totalRow.appendChild(statTile('Base Financial Net Worth', fmtGBP(netTotal), true));
 
-  const netIncomePA = (totals.ISA + totals.Pension * 0.65 - totalDebt) * (drawdownRate / 100);
+  const otherAssetsPensionEnabled = retirementSettings[RETIREMENT_SETTING_KEYS.otherAssetsPension] === 'true';
+  const otherAssetsPensionAmt = otherAssetsPensionEnabled ? otherAssetsPensionTotal() : 0;
+  const isaTotal = (totals.ISA || 0) + otherAssetsPensionAmt;
+
+  const netIncomePA = (isaTotal + totals.Pension * 0.65 - totalDebt) * (drawdownRate / 100);
   const netIncomePM = netIncomePA / 12;
 
   const outlookRow = document.getElementById('stat-row-outlook');
@@ -266,7 +279,7 @@ function renderStats() {
   `;
   outlookRow.appendChild(incomeTile);
 
-  renderRetirementOutlook(outlookRow, totals.ISA || 0, totals.Pension || 0, totalDebt);
+  renderRetirementOutlook(outlookRow, isaTotal, totals.Pension || 0, totalDebt);
 }
 
 // ---------- Retirement outlook ----------
