@@ -31,9 +31,11 @@
   .sort-header.sort-active .sort-arrow { opacity: 1; color: var(--series-1); }
   .sort-header.sort-desc .sort-arrow { transform: rotate(180deg); }
   @media (max-width: 480px) {
-    .cost-amount-raw { width: 96px; }
-    .expense-amount { width: 64px; font-size: 13px; }
+    .cost-amount-raw { display: none; }
+    .expense-amount { width: 76px; font-size: 13px; }
     .expense-list-header { font-size: 10px; }
+    #add-cost-btn { width: 100%; order: 1; }
+    #push-monthly-spend-btn { width: 100%; }
   }
 </style>
 </head>
