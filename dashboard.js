@@ -413,12 +413,12 @@ function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal, totalDebt) 
     const months = monthDiff(today, depletion.date);
     const ageValue = age.months ? `${age.years}y ${age.months}m` : `${age.years}`;
     ageTile.innerHTML = `
-      <div class="label">At Salary, Ok Until Age</div>
+      <div class="label">At Future Living, Ok Until Age</div>
       <div class="value">${ageValue}</div>
       <div class="sub-value">${dateLabel}</div>
     `;
     durationTile.innerHTML = `
-      <div class="label">At Salary, Ok For</div>
+      <div class="label">At Future Living, Ok For</div>
       <div class="value">${durationLabel(months)}</div>
     `;
   } else {
