@@ -409,16 +409,16 @@ function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal, totalDebt) 
 
   if (depletion) {
     const age = ageAt(dob, depletion.date);
-    const dateLabel = depletion.date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+    const spendLabel = `£${Math.round(spend0).toLocaleString('en-GB')}`;
     const months = monthDiff(today, depletion.date);
     const ageValue = age.months ? `${age.years}y ${age.months}m` : `${age.years}`;
     ageTile.innerHTML = `
-      <div class="label">At Future Living, Ok Until Age</div>
+      <div class="label">Ok at Future Living until</div>
       <div class="value">${ageValue}</div>
-      <div class="sub-value">${dateLabel}</div>
+      <div class="sub-value">${spendLabel} pm Net</div>
     `;
     durationTile.innerHTML = `
-      <div class="label">At Future Living, Ok For</div>
+      <div class="label">Ok at Future Living for</div>
       <div class="value">${durationLabel(months)}</div>
     `;
   } else {
