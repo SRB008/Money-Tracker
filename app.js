@@ -10,6 +10,7 @@ function seriesColor(i) {
 }
 
 const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
+const fmtGBP0 = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n);
 
 // ---------- Date helpers (local-time safe; avoids UTC/ISO-string shifting) ----------
 
@@ -97,15 +98,15 @@ function renderStats() {
 
   const totalRow = document.getElementById('stat-row-total');
   totalRow.innerHTML = '';
-  totalRow.appendChild(statTile('Total', fmtGBP(grandTotal), true));
+  totalRow.appendChild(statTile('Total', fmtGBP0(grandTotal), true));
 
   const row = document.getElementById('stat-row-accounts');
   row.innerHTML = '';
   for (const type of ['ISA', 'Pension']) {
-    row.appendChild(statTile(type, fmtGBP(totals[type] || 0), false));
+    row.appendChild(statTile(type, fmtGBP0(totals[type] || 0), false));
   }
-  row.appendChild(statTile('Other Assets', fmtGBP(otherAssetsTotal), false));
-  row.appendChild(statTile('Savings', fmtGBP(totals.Savings || 0), false));
+  row.appendChild(statTile('Other Assets', fmtGBP0(otherAssetsTotal), false));
+  row.appendChild(statTile('Savings', fmtGBP0(totals.Savings || 0), false));
 }
 function statTile(label, value, isTotal) {
   const div = document.createElement('div');
