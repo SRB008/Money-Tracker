@@ -415,11 +415,12 @@ function renderRetirementOutlook(outlookRow, isaTotal, pensionTotal, totalDebt) 
     ageTile.innerHTML = `
       <div class="label">Ok at Future Living until</div>
       <div class="value">${ageValue}</div>
-      <div class="sub-value">${spendLabel} pm Net</div>
+      <div class="sub-value">${spendLabel} pm net</div>
     `;
     durationTile.innerHTML = `
       <div class="label">Ok at Future Living for</div>
       <div class="value">${durationLabel(months)}</div>
+      <div class="sub-value">@${spendRatePct}% inflation</div>
     `;
   } else {
     ageTile.innerHTML = `
