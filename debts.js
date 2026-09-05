@@ -96,11 +96,14 @@ function renderDebtValueRows() {
     container.innerHTML = '<div class="empty">No debts yet — add one above.</div>';
     return;
   }
+  const latest = latestValueByDebt();
   for (const debt of debts) {
+    const v = latest[debt.id];
     const row = document.createElement('div');
     row.className = 'debt-value-row';
     row.innerHTML = `
       <span class="name">${escapeHtml(debt.name)}</span>
+      <span class="current-value">${v ? fmtGBP(v.outstanding_amount) : ''}</span>
       <input type="number" step="0.01" min="0" placeholder="0.00" class="dv-outstanding" data-debt-id="${debt.id}">
     `;
     container.appendChild(row);

@@ -491,6 +491,7 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .debt-value-row:last-child { border-bottom: none; }
 .debt-value-row .name { flex: 1; font-size: 14px; }
 .debt-value-row input { flex: none; width: 90px; text-align: right; }
+.debt-value-row .current-value { flex: none; width: 90px; text-align: right; font-style: italic; color: var(--text-muted); font-size: 14px; }
 
 .modal-overlay {
   position: fixed;
@@ -575,6 +576,24 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   text-align: right;
 }
 .share-update-btn:hover { filter: none; color: var(--series-1); }
+.share-price-update {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.share-price-input {
+  width: 72px;
+  min-height: auto;
+  padding: 5px 6px;
+  font-size: 13px;
+}
+.share-price-save {
+  flex: none;
+  min-height: auto;
+  padding: 5px 10px;
+  font-size: 12px;
+}
 .expense-running-total {
   flex: none;
   width: 100px;
@@ -661,12 +680,14 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   .expense-date { width: 60px; }
   .expense-amount { width: 64px; font-size: 13px; }
   .share-price { width: 64px; font-size: 13px; }
+  .share-price-input { width: 56px; }
   .expense-running-total { width: 74px; font-size: 13px; }
   .expense-list-header { font-size: 10px; }
   .month-nav button { padding: 6px 10px; }
   .month-actions { flex-wrap: wrap; }
   .debt-value-header span:not(.debt-value-header-name) { width: 66px; }
   .debt-value-row input { width: 66px; }
+  .debt-value-row .current-value { width: 66px; font-size: 13px; }
   .debt-value-header { font-size: 10px; }
   .month-actions #save-month-btn { width: 100%; }
 }
