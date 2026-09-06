@@ -34,9 +34,9 @@
 
     <div class="tabs" id="period-tabs">
       <button type="button" class="tab-btn" data-months="3">3 Months</button>
-      <button type="button" class="tab-btn" data-months="6">6 Months</button>
+      <!-- <button type="button" class="tab-btn" data-months="6">6 Months</button> -->
       <button type="button" class="tab-btn" data-months="12">12 Months</button>
-      <button type="button" class="tab-btn" data-view="chart">Chart</button>
+      <button type="button" class="tab-btn" data-view="chart">Performance</button>
     </div>
 
     <div id="history-empty" class="empty">Select an account and a period to see its history.</div>
@@ -55,7 +55,7 @@
     </div>
 
     <div id="history-chart-section" class="hidden">
-      <p>Annual growth (change in value over the trailing 12 months, less contributions) for each of the last 3 months.</p>
+      <p>Annual growth: % change in value over 12 months, less contributions.</p>
       <span id="history-chart-current" class="performance-current"></span>
       <div id="history-chart-wrap">
         <svg id="history-chart" viewBox="0 0 760 260" preserveAspectRatio="none"></svg>
