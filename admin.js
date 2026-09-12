@@ -579,6 +579,7 @@ function renderShares() {
   }
 
   for (const share of shares) {
+    const price = share.price != null ? Number(share.price) : null;
     const row = document.createElement('div');
     row.className = 'expense-row';
     row.innerHTML = `
@@ -586,10 +587,23 @@ function renderShares() {
         <span class="expense-date">${escapeHtml(share.trading_code)}</span>
         <span class="expense-name">${escapeHtml(share.title)}</span>
         <span class="expense-amount">${Number(share.quantity).toLocaleString('en-GB')}</span>
+        <span class="share-price">${price != null ? price.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' }) : '—'}</span>
+        <span class="share-price-update">
+          <input type="number" step="0.0001" min="0" class="share-price-input" placeholder="0.00" value="${price != null ? price : ''}">
+          <button type="button" class="share-price-save">Save</button>
+        </span>
         <button type="button" class="share-edit-btn" aria-label="Edit ${escapeHtml(share.title)}">&#9998;</button>
       </div>
     `;
     row.querySelector('.share-edit-btn').addEventListener('click', () => openShareModal(share));
+    const priceInput = row.querySelector('.share-price-input');
+    row.querySelector('.share-price-save').addEventListener('click', async () => {
+      const newPrice = priceInput.value;
+      if (newPrice === '') return;
+      const { error } = await sb.from('shares').update({ price: newPrice, updated_at: new Date().toISOString() }).eq('id', share.id);
+      if (error) return alert('Failed to update price: ' + error.message);
+      await loadShares();
+    });
     grid.appendChild(row);
   }
 }
