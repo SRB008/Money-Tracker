@@ -216,7 +216,7 @@ button:disabled { opacity: 0.5; cursor: default; }
   align-items: center;
   margin-bottom: 14px;
 }
-.card-header h2 { margin: 0; }
+.card-header h2, .card-header p { margin: 0; }
 
 .stat-row {
   display: grid;
