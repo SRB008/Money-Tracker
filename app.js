@@ -105,8 +105,8 @@ function renderStats() {
   for (const type of ['ISA', 'Pension']) {
     row.appendChild(statTile(type, fmtGBP0(totals[type] || 0), false));
   }
-  row.appendChild(statTile('Other Assets', fmtGBP0(otherAssetsTotal), false));
   row.appendChild(statTile('Savings', fmtGBP0(totals.Savings || 0), false));
+  row.appendChild(statTile('Other Assets', fmtGBP0(otherAssetsTotal), false));
 }
 function statTile(label, value, isTotal) {
   const div = document.createElement('div');

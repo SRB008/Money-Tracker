@@ -251,8 +251,8 @@ function renderStats() {
   for (const type of ['ISA', 'Pension']) {
     accountsRow.appendChild(statTile(type, fmtGBP0(totals[type] || 0), false));
   }
-  accountsRow.appendChild(statTile('Other Assets', fmtGBP0(otherAssetsTotal), false));
   accountsRow.appendChild(statTile('Savings', fmtGBP0(totals.Savings || 0), false));
+  accountsRow.appendChild(statTile('Other Assets', fmtGBP0(otherAssetsTotal), false));
 
   const debtRow = document.getElementById('stat-row-debt');
   debtRow.innerHTML = '';
