@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Correct Values</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+<style>
+  #correct-table input { width: 130px; text-align: right; }
+  #correct-table td.actions { text-align: right; white-space: nowrap; }
+  #correct-table tr.dirty td { background: color-mix(in srgb, var(--series-1) 8%, transparent); }
+  .row-msg { display: block; font-size: 12px; margin-top: 4px; }
+  .row-msg.ok { color: var(--series-1); }
+  .row-msg.error { color: var(--critical); }
+  .date-cell { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div id="fatal-error" class="hidden" style="max-width:600px;margin:60px auto;padding:20px;border:1px solid #d03b3b;border-radius:8px;color:#d03b3b;font-family:system-ui,sans-serif;"></div>
+
+<div id="app-view" class="wrap hidden">
+  <header class="app-header">
+    <nav class="tabs page-tabs">
+      <a href="investments.html" class="tab-btn">&larr; Assets</a>
+    </nav>
+    <div class="user-bar">
+      <span id="user-email"></span>
+      <button id="signout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>Correct Latest Values</h2>
+    <p class="empty" style="margin-top:0;">Edit the most recent value and/or contribution for an account to fix a data-entry error. The existing entry is updated in place &mdash; no new entry is created.</p>
+
+    <div id="correct-empty" class="empty">Loading&hellip;</div>
+
+    <div class="table-wrap">
+      <table id="correct-table" class="hidden">
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Type</th>
+            <th>Date</th>
+            <th class="value">Contribution</th>
+            <th class="value">Current value</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="correct-rows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  function showFatal(msg) {
+    var el = document.getElementById('fatal-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  window.addEventListener('error', function (e) {
+    showFatal('Something failed to load or run: ' + e.message + ' (' + (e.filename || '') + (e.lineno ? ':' + e.lineno : '') + ')');
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
+<script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
+<script>
+const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
+const fmtDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Latest investment_values row per account, keyed by account id.
+let latest = {};
+
+// ---------- Auth ----------
+
+const appView = document.getElementById('app-view');
+
+document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
+
+sb.auth.onAuthStateChange((_event, session) => {
+  if (session) {
+    appView.classList.remove('hidden');
+    document.getElementById('user-email').textContent = session.user.email;
+    loadAll();
+  } else {
+    window.location.href = 'index.html';
+  }
+});
+
+// ---------- Load ----------
+
+async function loadAll() {
+  const [accRes, valRes] = await Promise.all([
+    sb.from('accounts').select('*').order('type').order('name'),
+    sb.from('investment_values').select('*').order('date'),
+  ]);
+  if (accRes.error) return alert('Failed to load accounts: ' + accRes.error.message);
+  if (valRes.error) return alert('Failed to load values: ' + valRes.error.message);
+
+  // Rows are ordered by date ascending, so the last one seen per account wins.
+  // Ties on date fall back to created_at when present.
+  latest = {};
+  for (const v of valRes.data || []) {
+    const prev = latest[v.account_id];
+    if (!prev || v.date > prev.date || (v.date === prev.date && (v.created_at || '') >= (prev.created_at || ''))) {
+      latest[v.account_id] = v;
+    }
+  }
+
+  render(accRes.data || []);
+}
+
+function render(accounts) {
+  const empty = document.getElementById('correct-empty');
+  const table = document.getElementById('correct-table');
+  const rows = document.getElementById('correct-rows');
+
+  if (accounts.length === 0) {
+    empty.textContent = 'No accounts found.';
+    empty.classList.remove('hidden');
+    table.classList.add('hidden');
+    return;
+  }
+
+  rows.innerHTML = accounts.map(acc => {
+    const v = latest[acc.id];
+    if (!v) {
+      return `
+        <tr>
+          <td>${escapeHtml(acc.name)}</td>
+          <td>${escapeHtml(acc.type || '')}</td>
+          <td class="date-cell">&mdash;</td>
+          <td class="value">&mdash;</td>
+          <td class="value"><span class="empty">No value recorded</span></td>
+          <td></td>
+        </tr>`;
+    }
+    const hasContribution = v.contribution != null;
+    const takesContribution = hasContribution || acc.type === 'ISA' || acc.type === 'Pension';
+    const contribStr = hasContribution ? String(Number(v.contribution)) : '';
+    return `
+      <tr data-id="${v.id}">
+        <td>${escapeHtml(acc.name)}</td>
+        <td>${escapeHtml(acc.type || '')}</td>
+        <td class="date-cell">${fmtDate(v.date)}</td>
+        <td class="value">${takesContribution
+          ? `<input type="number" step="0.01" min="0" class="contribution-input" placeholder="None" value="${contribStr}" data-original="${contribStr}" aria-label="Contribution for ${escapeHtml(acc.name)}">`
+          : '&mdash;'}</td>
+        <td class="value"><input type="number" step="0.01" min="0" class="value-input" value="${Number(v.value)}" data-original="${Number(v.value)}" aria-label="Value for ${escapeHtml(acc.name)}"></td>
+        <td class="actions">
+          <button type="button" class="primary save-btn" disabled>Save</button>
+          <span class="row-msg"></span>
+        </td>
+      </tr>`;
+  }).join('');
+
+  empty.classList.add('hidden');
+  table.classList.remove('hidden');
+}
+
+// ---------- Edit / save ----------
+
+// A field counts as changed if it differs from what was loaded, so a change
+// to either the value or the contribution alone is enough to enable Save.
+function fieldChanged(input) {
+  const now = input.value.trim();
+  const was = input.dataset.original;
+  if (now === '' || was === '') return now !== was;
+  return Number(now) !== Number(was);
+}
+
+function rowIsDirty(tr) {
+  return [...tr.querySelectorAll('input')].some(fieldChanged);
+}
+
+function onRowEdit(e) {
+  const tr = e.target.closest('tr');
+  if (!tr || !tr.querySelector('.save-btn')) return;
+  const dirty = rowIsDirty(tr);
+  tr.classList.toggle('dirty', dirty);
+  tr.querySelector('.save-btn').disabled = !dirty;
+  const msg = tr.querySelector('.row-msg');
+  msg.textContent = '';
+  msg.className = 'row-msg';
+}
+
+document.getElementById('correct-rows').addEventListener('input', onRowEdit);
+document.getElementById('correct-rows').addEventListener('change', onRowEdit);
+
+document.getElementById('correct-rows').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.save-btn');
+  if (!btn) return;
+  const tr = btn.closest('tr');
+  const id = tr.dataset.id;
+  const msg = tr.querySelector('.row-msg');
+  const valueInput = tr.querySelector('.value-input');
+  const contribInput = tr.querySelector('.contribution-input');
+
+  const update = {};
+  if (valueInput.value.trim() === '' || isNaN(Number(valueInput.value))) {
+    msg.textContent = 'Enter a value.'; msg.className = 'row-msg error'; return;
+  }
+  update.value = valueInput.value;
+  if (contribInput) {
+    const c = contribInput.value.trim();
+    if (c !== '' && isNaN(Number(c))) {
+      msg.textContent = 'Enter a valid contribution.'; msg.className = 'row-msg error'; return;
+    }
+    update.contribution = c === '' ? null : c;
+  }
+
+  btn.disabled = true;
+  const { data, error } = await sb.from('investment_values').update(update).eq('id', id).select();
+  if (error) {
+    msg.textContent = 'Failed: ' + error.message; msg.className = 'row-msg error';
+    btn.disabled = false;
+    return;
+  }
+  if (!data || data.length === 0) {
+    // RLS silently filters updates it doesn't allow, returning zero rows.
+    msg.textContent = 'Not updated — no permission to edit this entry.'; msg.className = 'row-msg error';
+    btn.disabled = false;
+    return;
+  }
+
+  const saved = data[0];
+  valueInput.value = valueInput.dataset.original = String(Number(saved.value));
+  if (contribInput) contribInput.value = contribInput.dataset.original = saved.contribution != null ? String(Number(saved.contribution)) : '';
+  tr.classList.remove('dirty');
+  msg.textContent = 'Saved.'; msg.className = 'row-msg ok';
+});
+</script>
+</body>
+</html>

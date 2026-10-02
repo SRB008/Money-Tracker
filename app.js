@@ -107,6 +107,41 @@ function renderStats() {
   }
   row.appendChild(statTile('Savings', fmtGBP0(totals.Savings || 0), false));
   row.appendChild(statTile('Other Assets', fmtGBP0(otherAssetsTotal), false));
+
+  renderSavingsPerformance(latest);
+}
+
+function renderSavingsPerformance(latest) {
+  const groups = { taxable: { sum: 0, interest: 0 }, isa: { sum: 0, interest: 0 }, all: { sum: 0, interest: 0 } };
+  for (const acc of accounts) {
+    if (acc.type !== 'Savings') continue;
+    const v = latest[acc.id];
+    if (!v) continue;
+    const value = Number(v.value);
+    const interest = value * Number(acc.interest_rate || 0) / 100;
+    const targets = [groups.all];
+    if (acc.taxable === true) targets.push(groups.taxable);
+    else if (acc.taxable === false) targets.push(groups.isa);
+    for (const g of targets) {
+      g.sum += value;
+      g.interest += interest;
+    }
+  }
+
+  const row = document.getElementById('stat-row-savings');
+  row.innerHTML = '';
+  for (const [label, rateLabel, g] of [
+    ['Taxable Savings', 'Interest Rate', groups.taxable],
+    ['ISA Savings', 'ISA Interest Rate', groups.isa],
+    ['All Savings', 'Interest Rate', groups.all],
+  ]) {
+    const rate = g.sum > 0 ? (g.interest / g.sum) * 100 : 0;
+    const tile = statTile(label, fmtGBP0(g.sum), false);
+    tile.insertAdjacentHTML('beforeend', `
+      <div class="sub-value">${rateLabel}: ${rate.toFixed(2)}%</div>
+      <div class="sub-value">Potential Interest: ${fmtGBP0(g.interest)} pa</div>`);
+    row.appendChild(tile);
+  }
 }
 function statTile(label, value, isTotal) {
   const div = document.createElement('div');
