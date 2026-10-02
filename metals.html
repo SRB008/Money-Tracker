@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gold &amp; Silver</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Page-specific layout; colours come from the shared tokens in style.css */
+  .metal-block { padding: 18px 0; border-top: 1px solid var(--gridline); }
+  .metal-block:first-child { border-top: none; padding-top: 0; }
+  .metal-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .metal-label { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .metal-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .metal-dot.gold { background: var(--series-4); }
+  .metal-dot.silver { background: var(--series-total); }
+  .metal-values { text-align: right; }
+  .metal-price { font-size: 1.5rem; font-weight: 600; }
+  .metal-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+  .metal-change { font-size: 13px; font-weight: 500; margin-top: 2px; }
+  .metal-change.up { color: var(--good); }
+  .metal-change.down { color: var(--critical); }
+  .holding { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 14px; }
+  .holding-label { color: var(--text-muted); font-size: 12px; }
+  .holding-value { font-weight: 600; margin-top: 2px; }
+  .holding-actions { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .holding-actions .msg { margin-top: 0; }
+  .metals-meta {
+    margin-top: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--gridline);
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div id="fatal-error" class="hidden" style="max-width:600px;margin:60px auto;padding:20px;border:1px solid #d03b3b;border-radius:8px;color:#d03b3b;font-family:system-ui,sans-serif;"></div>
+
+<div id="app-view" class="wrap hidden">
+  <header class="app-header">
+    <nav class="tabs page-tabs">
+      <a href="investments.html" class="tab-btn">&larr; Assets</a>
+    </nav>
+    <div class="user-bar">
+      <span id="user-email"></span>
+      <button id="signout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>Gold &amp; Silver</h2>
+    </div>
+    <p class="empty" style="margin-top:0">Live spot price per troy ounce, in GBP</p>
+
+    <div id="loading" class="empty">Loading prices…</div>
+
+    <div id="rows" class="hidden">
+      <div class="metal-block">
+        <div class="metal-row">
+          <div class="metal-label"><span class="metal-dot gold"></span>Gold (XAU)</div>
+          <div class="metal-values">
+            <div class="metal-price" id="goldPrice">—</div>
+            <div class="metal-sub" id="goldGram">—</div>
+            <div class="metal-change" id="goldChange"></div>
+          </div>
+        </div>
+        <div class="holding">
+          <div><div class="holding-label">Quantity (oz)</div><div class="holding-value" id="goldQty">—</div></div>
+          <div><div class="holding-label">Current value</div><div class="holding-value" id="goldCurrent">—</div></div>
+          <div><div class="holding-label">New value</div><div class="holding-value" id="goldNew">—</div></div>
+        </div>
+        <div class="holding-actions">
+          <span class="msg" id="goldMsg"></span>
+          <button type="button" class="primary" id="goldUpdate" disabled>Update</button>
+        </div>
+      </div>
+      <div class="metal-block">
+        <div class="metal-row">
+          <div class="metal-label"><span class="metal-dot silver"></span>Silver (XAG)</div>
+          <div class="metal-values">
+            <div class="metal-price" id="silverPrice">—</div>
+            <div class="metal-sub" id="silverGram">—</div>
+            <div class="metal-change" id="silverChange"></div>
+          </div>
+        </div>
+        <div class="holding">
+          <div><div class="holding-label">Quantity (oz)</div><div class="holding-value" id="silverQty">—</div></div>
+          <div><div class="holding-label">Current value</div><div class="holding-value" id="silverCurrent">—</div></div>
+          <div><div class="holding-label">New value</div><div class="holding-value" id="silverNew">—</div></div>
+        </div>
+        <div class="holding-actions">
+          <span class="msg" id="silverMsg"></span>
+          <button type="button" class="primary" id="silverUpdate" disabled>Update</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="msg error hidden" id="errorBox"></div>
+
+    <div class="metals-meta">
+      <span id="updatedAt"></span>
+      <button id="refreshBtn" type="button">Refresh</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function showFatal(msg) {
+    var el = document.getElementById('fatal-error');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  window.addEventListener('error', function (e) {
+    showFatal('Something failed to load or run: ' + e.message + ' (' + (e.filename || '') + (e.lineno ? ':' + e.lineno : '') + ')');
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
+<script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
+<script>
+const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+const GOLDAPI_KEY = 'goldapi-a248dda0df9871ce7c7e1113dc27ce07-io';
+const CURRENCY = 'GBP';
+
+const loading = document.getElementById('loading');
+const rows = document.getElementById('rows');
+const errorBox = document.getElementById('errorBox');
+const refreshBtn = document.getElementById('refreshBtn');
+const updatedAt = document.getElementById('updatedAt');
+
+function showError(msg) {
+  rows.classList.add('hidden');
+  loading.classList.add('hidden');
+  errorBox.textContent = msg;
+  errorBox.classList.remove('hidden');
+}
+
+function hideError() {
+  errorBox.classList.add('hidden');
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: CURRENCY }).format(value);
+}
+
+async function fetchMetal(symbol) {
+  const res = await fetch(`https://www.goldapi.io/api/${symbol}/${CURRENCY}`, {
+    method: 'GET',
+    headers: {
+      'x-access-token': GOLDAPI_KEY,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('goldapi.io rejected the API key.');
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`goldapi.io error (${res.status}): ${text || 'request failed'}`);
+  }
+  return res.json();
+}
+
+function renderMetal(prefix, data) {
+  document.getElementById(`${prefix}Price`).textContent = formatCurrency(data.price) + ' / oz';
+  document.getElementById(`${prefix}Gram`).textContent = formatCurrency(data.price_per_unit.gram) + ' / g';
+
+  const changeEl = document.getElementById(`${prefix}Change`);
+  const change = data.change;
+  const changePct = data.change_percent;
+  if (typeof change === 'number' && typeof changePct === 'number') {
+    const sign = change >= 0 ? '+' : '';
+    changeEl.textContent = `${sign}${change.toFixed(2)} (${sign}${changePct.toFixed(2)}%)`;
+    changeEl.className = 'metal-change ' + (change >= 0 ? 'up' : 'down');
+  } else {
+    changeEl.textContent = '';
+  }
+}
+
+async function loadPrices() {
+  refreshBtn.disabled = true;
+  refreshBtn.textContent = 'Refreshing…';
+  hideError();
+  loading.classList.remove('hidden');
+  rows.classList.add('hidden');
+
+  try {
+    const [gold, silver] = await Promise.all([
+      fetchMetal('price/XAU'),
+      fetchMetal('price/XAG')
+    ]);
+
+    renderMetal('gold', gold);
+    renderMetal('silver', silver);
+    livePrices.gold = gold.price;
+    livePrices.silver = silver.price;
+    await loadHoldings();
+
+    loading.classList.add('hidden');
+    rows.classList.remove('hidden');
+    updatedAt.textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+  } catch (err) {
+    showError(err.message || 'Could not fetch prices.');
+  } finally {
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = 'Refresh';
+  }
+}
+
+// ---------- Holdings (other_assets rows of type Au / Ag for the signed-in user) ----------
+
+const METALS = { gold: 'Au', silver: 'Ag' };
+const livePrices = { gold: null, silver: null };
+const holdings = { gold: [], silver: [] };
+let currentUser = null;
+
+function round2(n) { return Math.round(n * 100) / 100; }
+
+function setMsg(prefix, text, cls) {
+  const el = document.getElementById(`${prefix}Msg`);
+  el.textContent = text;
+  el.className = 'msg' + (cls ? ' ' + cls : '');
+}
+
+async function loadHoldings() {
+  const { data, error } = await sb.from('other_assets')
+    .select('id, title, type, quantity, value')
+    .eq('user_id', currentUser.id)
+    .in('type', Object.values(METALS));
+  if (error) {
+    for (const prefix of Object.keys(METALS)) setMsg(prefix, 'Failed to load holding: ' + error.message, 'error');
+    return;
+  }
+  for (const [prefix, type] of Object.entries(METALS)) {
+    holdings[prefix] = (data || []).filter(a => a.type === type);
+    renderHolding(prefix);
+  }
+}
+
+function renderHolding(prefix) {
+  const rows = holdings[prefix];
+  const btn = document.getElementById(`${prefix}Update`);
+  if (rows.length === 0) {
+    document.getElementById(`${prefix}Qty`).textContent = '—';
+    document.getElementById(`${prefix}Current`).textContent = '—';
+    document.getElementById(`${prefix}New`).textContent = '—';
+    setMsg(prefix, `No other asset of type ${METALS[prefix]} found.`);
+    btn.disabled = true;
+    return;
+  }
+  const qty = rows.reduce((t, a) => t + Number(a.quantity || 0), 0);
+  const current = rows.reduce((t, a) => t + Number(a.value || 0), 0);
+  const price = livePrices[prefix];
+  document.getElementById(`${prefix}Qty`).textContent = qty;
+  document.getElementById(`${prefix}Current`).textContent = formatCurrency(current);
+  document.getElementById(`${prefix}New`).textContent = price != null ? formatCurrency(round2(qty * price)) : '—';
+  setMsg(prefix, '');
+  btn.disabled = price == null || qty === 0;
+}
+
+async function updateHolding(prefix) {
+  const price = livePrices[prefix];
+  const btn = document.getElementById(`${prefix}Update`);
+  if (price == null) return;
+  btn.disabled = true;
+  setMsg(prefix, 'Saving…');
+  const unitPrice = round2(price);
+  for (const asset of holdings[prefix]) {
+    const value = round2(Number(asset.quantity || 0) * price);
+    const { error } = await sb.from('other_assets')
+      .update({ unit_price: unitPrice, value, updated_at: new Date().toISOString() })
+      .eq('id', asset.id)
+      .eq('user_id', currentUser.id);
+    if (error) {
+      setMsg(prefix, 'Failed to save: ' + error.message, 'error');
+      btn.disabled = false;
+      return;
+    }
+  }
+  await loadHoldings();
+  setMsg(prefix, 'Updated.', 'ok');
+}
+
+document.getElementById('goldUpdate').addEventListener('click', () => updateHolding('gold'));
+document.getElementById('silverUpdate').addEventListener('click', () => updateHolding('silver'));
+
+refreshBtn.addEventListener('click', loadPrices);
+
+// ---------- Auth ----------
+
+document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
+
+sb.auth.onAuthStateChange((_event, session) => {
+  if (session) {
+    const firstLoad = !currentUser;
+    currentUser = session.user;
+    document.getElementById('app-view').classList.remove('hidden');
+    document.getElementById('user-email').textContent = session.user.email;
+    if (firstLoad) loadPrices();
+  } else {
+    window.location.href = 'index.html';
+  }
+});
+</script>
+</body>
+</html>
