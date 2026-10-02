@@ -374,6 +374,9 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .auth-wrap .field input { width: 100%; }
 .auth-toggle { text-align: center; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
 .auth-toggle a { color: var(--series-1); cursor: pointer; }
+.other-metals-link { margin: 0 0 12px; font-size: 14px; }
+.other-metals-link a { color: var(--series-1); text-decoration: none; }
+.other-metals-link a:hover { text-decoration: underline; }
 .msg { font-size: 13px; margin-top: 8px; }
 .msg.error { color: var(--critical); }
 .msg.ok { color: var(--good); }

@@ -336,10 +336,12 @@ function renderOtherAssets() {
     row.innerHTML = `
       <div class="value-row-top">
         <span class="name">${escapeHtml(asset.title)}</span>
+        <span class="current-value">${asset.quantity != null ? Number(asset.quantity) : ''}</span>
+        <span class="current-value">${asset.unit_price != null ? fmtGBP(asset.unit_price) : ''}</span>
         <span class="current-value">${asset.value != null ? fmtGBP(asset.value) : ''}</span>
       </div>
       <div class="value-row-fields">
-        <input type="number" step="0.01" min="0" placeholder="New value" class="value-input" data-asset-id="${asset.id}">
+        <input type="number" step="0.01" min="0" placeholder="New unit £" class="value-input" data-asset-id="${asset.id}">
       </div>
     `;
     container.appendChild(row);
@@ -354,11 +356,16 @@ async function saveOtherAssets() {
   const container = document.getElementById('rows-Other');
   const updates = [...container.querySelectorAll('.value-input')]
     .filter(input => input.value.trim() !== '')
-    .map(input => ({ id: input.dataset.assetId, value: input.value }));
+    .map(input => ({ id: input.dataset.assetId, unitPrice: Number(input.value) }));
   if (updates.length === 0) { msg.textContent = 'Enter at least one value.'; msg.className = 'msg error'; return; }
 
   for (const u of updates) {
-    const { error } = await sb.from('other_assets').update({ value: u.value, updated_at: new Date().toISOString() }).eq('id', u.id);
+    // value is stored as quantity x unit price so totals elsewhere can just sum it;
+    // an asset with no quantity set counts as a single unit.
+    const asset = otherAssets.find(a => a.id === u.id);
+    const qty = asset && asset.quantity != null ? Number(asset.quantity) : 1;
+    const value = Math.round(qty * u.unitPrice * 100) / 100;
+    const { error } = await sb.from('other_assets').update({ unit_price: u.unitPrice, value, updated_at: new Date().toISOString() }).eq('id', u.id);
     if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
   }
   msg.textContent = 'Saved.';

@@ -693,6 +693,8 @@ function renderOtherAssets() {
     row.innerHTML = `
       <div class="expense-row-main">
         <span class="expense-name">${escapeHtml(asset.title)}</span>
+        <span class="expense-amount">${escapeHtml(asset.type || '')}</span>
+        <span class="expense-amount">${asset.quantity != null ? asset.quantity : ''}</span>
         <span class="expense-amount">${asset.pension ? 'Yes' : 'No'}</span>
         <button type="button" class="share-edit-btn" aria-label="Edit ${escapeHtml(asset.title)}">&#9998;</button>
       </div>
@@ -715,6 +717,8 @@ function openOtherAssetModal(asset) {
   if (asset) {
     document.getElementById('new-other-asset-title').value = asset.title;
     document.getElementById('new-other-asset-pension').value = asset.pension ? 'Yes' : 'No';
+    document.getElementById('new-other-asset-type').value = asset.type || '';
+    document.getElementById('new-other-asset-quantity').value = asset.quantity ?? '';
   }
   otherAssetModal.classList.remove('hidden');
   document.getElementById('new-other-asset-title').focus();
@@ -744,13 +748,22 @@ otherAssetForm.addEventListener('submit', async (e) => {
   const title = document.getElementById('new-other-asset-title').value.trim();
   if (!title) return;
   const pension = document.getElementById('new-other-asset-pension').value === 'Yes';
+  const type = document.getElementById('new-other-asset-type').value.trim() || null;
+  const quantityRaw = document.getElementById('new-other-asset-quantity').value;
+  const quantity = quantityRaw === '' ? null : parseFloat(quantityRaw);
 
   if (editingOtherAssetId) {
-    const { error } = await sb.from('other_assets').update({ title, pension }).eq('id', editingOtherAssetId);
+    const changes = { title, pension, type, quantity };
+    // Keep the stored value in step with quantity x unit price.
+    const existing = otherAssets.find(a => a.id === editingOtherAssetId);
+    if (existing && existing.unit_price != null) {
+      changes.value = Math.round((quantity ?? 1) * Number(existing.unit_price) * 100) / 100;
+    }
+    const { error } = await sb.from('other_assets').update(changes).eq('id', editingOtherAssetId);
     if (error) return alert('Failed to save changes: ' + error.message);
   } else {
     const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb.from('other_assets').insert({ title, pension, user_id: user.id });
+    const { error } = await sb.from('other_assets').insert({ title, pension, type, quantity, user_id: user.id });
     if (error) return alert('Failed to add asset: ' + error.message);
   }
   closeOtherAssetModal();
