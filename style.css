@@ -407,6 +407,8 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .tab-btn:hover { filter: none; color: var(--text-primary); }
 .tab-btn-icon { padding: 9px 12px; }
 .tab-btn-icon svg { display: block; }
+.tab-btn-period { gap: 5px; justify-content: center; }
+.tab-period { font-size: 12px; line-height: 1; }
 .tab-btn.active {
   background: var(--surface-1);
   color: var(--series-1);

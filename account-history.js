@@ -8,8 +8,8 @@ function toISODate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${p
 function parseISODate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
 
 let accounts = [];
-let selectedView = null; // 'table' | 'chart'
-let selectedMonths = null;
+let selectedView = 'value-chart'; // 'table' | 'chart' | 'value-chart'
+let selectedMonths = 3;
 
 // ---------- Auth ----------
 
@@ -54,6 +54,7 @@ async function loadAccounts() {
 
 document.getElementById('account-select').addEventListener('change', () => {
   if (selectedView === 'chart') loadChart();
+  else if (selectedView === 'value-chart') loadValueChart();
   else if (selectedView === 'table' && selectedMonths) loadHistory();
 });
 
@@ -66,6 +67,10 @@ document.querySelectorAll('#period-tabs .tab-btn').forEach(btn => {
     if (btn.dataset.view === 'chart') {
       selectedView = 'chart';
       loadChart();
+    } else if (btn.dataset.view === 'value-chart') {
+      selectedView = 'value-chart';
+      selectedMonths = Number(btn.dataset.months);
+      loadValueChart();
     } else {
       selectedView = 'table';
       selectedMonths = Number(btn.dataset.months);
@@ -203,10 +208,72 @@ async function loadChart() {
   currentLabel.textContent = `${current >= 0 ? '+' : ''}${current.toFixed(1)}%`;
   currentLabel.className = 'performance-current ' + (current >= 0 ? 'positive' : 'negative');
 
-  document.getElementById('history-chart').innerHTML = buildHistoryChartSvg(points);
+  document.getElementById('history-chart-caption').textContent = 'Annual % change, less contributions.';
+  document.getElementById('history-chart').innerHTML = buildHistoryChartSvg(points.map(p => ({ date: p.date, y: p.pct })), PCT_CHART);
   empty.classList.add('hidden');
   chartSection.classList.remove('hidden');
 }
+
+// ---------- Chart: account value over the selected period ----------
+
+async function loadValueChart() {
+  const accountId = document.getElementById('account-select').value;
+  const empty = document.getElementById('history-empty');
+  const table = document.getElementById('history-table');
+  const chartSection = document.getElementById('history-chart-section');
+  const currentLabel = document.getElementById('history-chart-current');
+
+  table.classList.add('hidden');
+  chartSection.classList.add('hidden');
+  currentLabel.textContent = '';
+
+  if (!accountId) {
+    empty.textContent = 'Select an account to see its history.';
+    empty.classList.remove('hidden');
+    return;
+  }
+
+  const today = new Date();
+  const from = new Date(today.getFullYear(), today.getMonth() - selectedMonths, today.getDate());
+
+  const { data, error } = await sb.from('investment_values')
+    .select('date, value')
+    .eq('account_id', accountId)
+    .gte('date', toISODate(from))
+    .order('date', { ascending: true });
+  if (error) return alert('Failed to load history: ' + error.message);
+
+  if (!data || data.length === 0) {
+    empty.textContent = `No values recorded for this account in the last ${selectedMonths} months.`;
+    empty.classList.remove('hidden');
+    return;
+  }
+
+  const points = data.map(v => ({ date: v.date, y: Number(v.value) }));
+  currentLabel.textContent = fmtGBP(points[points.length - 1].y);
+  currentLabel.className = 'performance-current';
+
+  document.getElementById('history-chart-caption').textContent = `Recorded value over the last ${selectedMonths} months.`;
+  document.getElementById('history-chart').innerHTML = buildHistoryChartSvg(points, VALUE_CHART);
+  empty.classList.add('hidden');
+  chartSection.classList.remove('hidden');
+}
+
+// ---------- Shared SVG line chart ----------
+
+const fmtGBPCompact = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
+const PCT_CHART = {
+  includeZero: true,
+  tick: (g) => `${g > 0 ? '+' : ''}${g.toFixed(0)}%`,
+  tip: (y) => `${y >= 0 ? '+' : ''}${y.toFixed(1)}%`,
+};
+
+const VALUE_CHART = {
+  includeZero: false,
+  tick: fmtGBPCompact,
+  tip: fmtGBP,
+};
 
 function niceStep(range) {
   const rough = range / 5;
@@ -216,7 +283,7 @@ function niceStep(range) {
   return step * mag;
 }
 
-function buildHistoryChartSvg(points) {
+function buildHistoryChartSvg(points, opts) {
   const W = 760, H = 260;
   const pad = { left: 48, right: 16, top: 16, bottom: 28 };
   const plotW = W - pad.left - pad.right;
@@ -227,10 +294,10 @@ function buildHistoryChartSvg(points) {
   const spanMs = Math.max(endMs - startMs, 1);
   const xScale = (dateStr) => pad.left + ((parseISODate(dateStr).getTime() - startMs) / spanMs) * plotW;
 
-  const allPct = points.map(p => p.pct);
-  let minPct = Math.min(0, ...allPct);
-  let maxPct = Math.max(0, ...allPct);
-  if (minPct === maxPct) { minPct -= 1; maxPct += 1; }
+  const allY = points.map(p => p.y);
+  let minPct = opts.includeZero ? Math.min(0, ...allY) : Math.min(...allY);
+  let maxPct = opts.includeZero ? Math.max(0, ...allY) : Math.max(...allY);
+  if (minPct === maxPct) { const bump = Math.abs(minPct) * 0.05 || 1; minPct -= bump; maxPct += bump; }
   const rangePad = (maxPct - minPct) * 0.1 || 1;
   minPct -= rangePad;
   maxPct += rangePad;
@@ -243,7 +310,7 @@ function buildHistoryChartSvg(points) {
     const y = yScale(g).toFixed(1);
     const isZero = Math.abs(g) < 1e-9;
     gridLines.push(`<line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" class="perf-gridline${isZero ? ' perf-zeroline' : ''}" />`);
-    gridLines.push(`<text x="${pad.left - 8}" y="${y}" class="perf-axis-label" text-anchor="end" dominant-baseline="middle">${g > 0 ? '+' : ''}${g.toFixed(0)}%</text>`);
+    gridLines.push(`<text x="${pad.left - 8}" y="${y}" class="perf-axis-label" text-anchor="end" dominant-baseline="middle">${opts.tick(g)}</text>`);
   }
 
   const dateLabels = [];
@@ -258,14 +325,14 @@ function buildHistoryChartSvg(points) {
     }
   }
 
-  const zeroY = yScale(0).toFixed(1);
-  const linePoints = points.map(p => `${xScale(p.date).toFixed(1)},${yScale(p.pct).toFixed(1)}`).join(' ');
+  const zeroY = (opts.includeZero ? yScale(0) : pad.top + plotH).toFixed(1);
+  const linePoints = points.map(p => `${xScale(p.date).toFixed(1)},${yScale(p.y).toFixed(1)}`).join(' ');
   const area = `<polygon points="${xScale(points[0].date).toFixed(1)},${zeroY} ${linePoints} ${xScale(points[points.length - 1].date).toFixed(1)},${zeroY}" class="perf-area" style="fill:color-mix(in srgb, var(--series-1) 15%, transparent)" />`;
   const line = `<polyline points="${linePoints}" class="perf-line" style="stroke:var(--series-1);stroke-width:2.5" />`;
   const dots = points.map(p => {
     const x = xScale(p.date).toFixed(1);
-    const y = yScale(p.pct).toFixed(1);
-    return `<circle cx="${x}" cy="${y}" r="2.5" style="fill:var(--series-1)"><title>${fmtDate(p.date)}: ${p.pct >= 0 ? '+' : ''}${p.pct.toFixed(1)}%</title></circle>`;
+    const y = yScale(p.y).toFixed(1);
+    return `<circle cx="${x}" cy="${y}" r="2.5" style="fill:var(--series-1)"><title>${fmtDate(p.date)}: ${opts.tip(p.y)}</title></circle>`;
   }).join('');
 
   return `${gridLines.join('')}${area}${line}${dots}${dateLabels.join('')}`;
