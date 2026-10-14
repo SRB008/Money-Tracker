@@ -1,53 +1,22 @@
-const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
-
-const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
-const fmtDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+// Debts. Shared code lives in lib.js.
 
 let debts = [];
-let debtValues = [];
 
-// ---------- Auth ----------
+let latestDebt = {};   // debt_id -> latest value row
 
-const appView = document.getElementById('app-view');
-
-sb.auth.onAuthStateChange((_event, session) => {
-  if (session) {
-    appView.classList.remove('hidden');
-    document.getElementById('user-email').textContent = session.user.email;
-    loadAll();
-  } else {
-    window.location.href = 'index.html';
-  }
-});
-
-document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
+initProtectedPage(loadAll);
 
 // ---------- Data loading ----------
 
 async function loadAll() {
   const [{ data: d, error: debtErr }, { data: v, error: valErr }] = await Promise.all([
     sb.from('debts').select('*').order('name'),
-    sb.from('debt_values').select('*').order('date'),
+    sb.from('latest_debt_values').select('*'),
   ]);
-  if (debtErr) return alert('Failed to load debts: ' + debtErr.message);
-  if (valErr) return alert('Failed to load debt values: ' + valErr.message);
+  if (failed('Failed to load debts', debtErr) || failed('Failed to load debt values', valErr)) return;
   debts = d || [];
-  debtValues = v || [];
+  latestDebt = indexBy(v || [], 'debt_id');
   renderAll();
-}
-
-function latestValueByDebt() {
-  const latest = {};
-  for (const v of debtValues) {
-    const cur = latest[v.debt_id];
-    if (!cur || v.date > cur.date || (v.date === cur.date && v.created_at > cur.created_at)) {
-      latest[v.debt_id] = v;
-    }
-  }
-  return latest;
 }
 
 function renderAll() {
@@ -60,7 +29,7 @@ function renderAll() {
 function renderDebtsList() {
   const grid = document.getElementById('debts-grid');
   grid.innerHTML = '';
-  const latest = latestValueByDebt();
+  const latest = latestDebt;
   for (const debt of debts) {
     const v = latest[debt.id];
     const details = [];
@@ -96,7 +65,7 @@ function renderDebtValueRows() {
     container.innerHTML = '<div class="empty">No debts yet — add one above.</div>';
     return;
   }
-  const latest = latestValueByDebt();
+  const latest = latestDebt;
   for (const debt of debts) {
     const v = latest[debt.id];
     const row = document.createElement('div');
@@ -110,7 +79,7 @@ function renderDebtValueRows() {
   }
 }
 
-document.getElementById('save-debt-values-btn').addEventListener('click', async () => {
+document.getElementById('save-debt-values-btn').addEventListener('click', (e) => busy(e.currentTarget, async () => {
   const msg = document.getElementById('debt-value-msg');
   msg.textContent = '';
   msg.className = 'msg';
@@ -119,23 +88,21 @@ document.getElementById('save-debt-values-btn').addEventListener('click', async 
 
   const container = document.getElementById('debt-value-rows');
   const entries = [];
-  container.querySelectorAll('.dv-outstanding').forEach(input => {
-    if (input.value.trim() === '') return;
-    entries.push({
-      debt_id: input.dataset.debtId,
-      date,
-      outstanding_amount: input.value,
-    });
-  });
+  for (const input of container.querySelectorAll('.dv-outstanding')) {
+    const amount = toNum(input.value);
+    if (amount == null) continue;
+    if (Number.isNaN(amount) || amount < 0) { msg.textContent = 'Enter valid amounts.'; msg.className = 'msg error'; return; }
+    entries.push({ debt_id: input.dataset.debtId, date, outstanding_amount: amount });
+  }
   if (entries.length === 0) { msg.textContent = 'Enter at least one outstanding amount.'; msg.className = 'msg error'; return; }
 
-  const { data: { user } } = await sb.auth.getUser();
-  const { error } = await sb.from('debt_values').insert(entries.map(e => ({ ...e, user_id: user.id })));
+  // One statement, so all rows save or none do; re-entering a date replaces that day's value.
+  const { error } = await sb.from('debt_values').upsert(entries, { onConflict: 'debt_id,date' });
   if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
   msg.textContent = 'Saved.';
   msg.className = 'msg ok';
   await loadAll();
-});
+}));
 
 // ---------- Add / edit debt modal ----------
 
@@ -174,34 +141,33 @@ document.getElementById('debt-modal-delete').addEventListener('click', async () 
   if (!editingDebtId) return;
   if (!confirm('Delete this debt and all its recorded values? This can\'t be undone.')) return;
   const { error } = await sb.from('debts').delete().eq('id', editingDebtId);
-  if (error) return alert('Failed to delete: ' + error.message);
+  if (failed('Failed to delete', error)) return;
   closeDebtModal();
   await loadAll();
 });
 
-debtForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+onSubmit(debtForm, async () => {
   const name = document.getElementById('new-debt-name').value.trim();
   if (!name) return;
-  const paymentVal = document.getElementById('new-debt-payment').value;
-  const rateVal = document.getElementById('new-debt-rate').value;
+  const paymentVal = toNum(document.getElementById('new-debt-payment').value);
+  const rateVal = toNum(document.getElementById('new-debt-rate').value);
+  if (Number.isNaN(paymentVal) || Number.isNaN(rateVal)) return notify('Enter valid numbers.');
   const endDateVal = document.getElementById('new-debt-end-date').value;
   const noteVal = document.getElementById('new-debt-note').value.trim();
   const record = {
     name,
-    monthly_payment: paymentVal === '' ? null : paymentVal,
-    interest_rate: rateVal === '' ? null : rateVal,
+    monthly_payment: paymentVal,
+    interest_rate: rateVal,
     end_date: endDateVal === '' ? null : endDateVal,
     note: noteVal === '' ? null : noteVal,
   };
 
   if (editingDebtId) {
     const { error } = await sb.from('debts').update(record).eq('id', editingDebtId);
-    if (error) return alert('Failed to save changes: ' + error.message);
+    if (failed('Failed to save changes', error)) return;
   } else {
-    const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb.from('debts').insert({ ...record, user_id: user.id });
-    if (error) return alert('Failed to add debt: ' + error.message);
+    const { error } = await sb.from('debts').insert(record);
+    if (failed('Failed to add debt', error)) return;
   }
   closeDebtModal();
   await loadAll();

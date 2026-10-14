@@ -1,37 +1,45 @@
-const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
-
-const DEFAULT_DRAWDOWN_RATE = 4;
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+// Admin. Shared code lives in lib.js and retirement.js.
 
 let shares = [];
 let accounts = [];
-let investmentValues = [];
+let latestAccount = {};   // account_id -> latest value row (latest_account_values view)
 let debts = [];
-let debtValues = [];
+let latestDebt = {};      // debt_id -> latest value row (latest_debt_values view)
 let otherAssets = [];
 
-const appView = document.getElementById('app-view');
+initProtectedPage(loadAll);
 
-sb.auth.onAuthStateChange((_event, session) => {
-  if (session) {
-    appView.classList.remove('hidden');
-    document.getElementById('user-email').textContent = session.user.email;
-    loadSettings();
-    loadShares();
-    loadAccounts();
-    loadOtherAssets();
-    loadRetirementSettings();
-    loadInvestmentValues();
-    loadDebtsForRetirement();
-  } else {
-    window.location.href = 'index.html';
+// One round of queries on page load; the chart is drawn once everything is in.
+async function loadAll() {
+  const results = await Promise.all([
+    sb.from('accounts').select('*').order('name'),
+    sb.from('latest_account_values').select('*'),
+    sb.from('shares').select('*').order('title'),
+    sb.from('other_assets').select('*').order('title'),
+    sb.from('debts').select('*'),
+    sb.from('latest_debt_values').select('*'),
+    sb.from('app_settings').select('key, value').in('key', RETIREMENT_SETTING_KEYS),
+  ]);
+  const labels = ['accounts', 'values', 'shares', 'other assets', 'debts', 'debt values', 'settings'];
+  for (let i = 0; i < results.length; i++) {
+    if (failed(`Failed to load ${labels[i]}`, results[i].error)) return;
   }
-});
+  const [acc, val, shr, oth, d, dv, sett] = results.map(r => r.data || []);
+  accounts = acc;
+  latestAccount = indexBy(val, 'account_id');
+  shares = shr;
+  otherAssets = oth;
+  debts = d;
+  latestDebt = indexBy(dv, 'debt_id');
+  const settings = {};
+  for (const row of sett) settings[row.key] = row.value;
 
-document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
+  applySettingsToForm(settings);
+  renderAccounts();
+  renderShares();
+  renderOtherAssets();
+  renderRetirementChart();
+}
 
 // Net Monthly Spend is displayed and stored as a whole number.
 document.getElementById('retire-monthly-spend').addEventListener('change', (e) => {
@@ -39,253 +47,67 @@ document.getElementById('retire-monthly-spend').addEventListener('change', (e) =
   e.target.value = Math.round(Number(e.target.value));
 });
 
-async function loadSettings() {
-  const { data, error } = await sb
-    .from('app_settings')
-    .select('*')
-    .eq('key', 'pension_drawdown_rate')
-    .maybeSingle();
-  if (error) return alert('Failed to load settings: ' + error.message);
-  const rate = data ? Number(data.value) : DEFAULT_DRAWDOWN_RATE;
-  document.getElementById('drawdown-rate').value = rate;
-}
+// ---------- Retirement settings ----------
+// The model itself lives in retirement.js; this page edits its inputs and
+// draws the runway chart from whatever is currently in the form.
 
-// ---------- Retirement drawdown ----------
-// Simulates spending down the ISA (non-taxable) and Pension (taxable) pots
-// together: both pots grow monthly at Expected Pot Growth, then that month's
-// spend (rising smoothly at Spend Increase by) is drawn from each pot in
-// proportion to its balance. The pension side is grossed up so the tax it
-// loses still leaves the intended net amount in hand; if one pot runs dry
-// the rest of that month's spend comes from whichever pot still has money.
-
-const RETIREMENT_SETTING_KEYS = {
-  spend: 'retirement_net_monthly_spend',
-  potGrowth: 'retirement_pot_growth_rate',
-  spendIncrease: 'retirement_spend_increase_rate',
-  dob: 'retirement_dob',
-  taxRate: 'retirement_tax_rate',
-  statePension: 'retirement_state_pension_enabled',
-  statePensionStartDate: 'retirement_state_pension_start_date',
-  clearDebt: 'retirement_clear_debt_enabled',
-  otherAssetsPension: 'retirement_other_assets_pension_enabled',
-};
 const hiddenRetirementSeries = new Set();
+const K = RETIREMENT_KEYS;
 
-async function loadRetirementSettings() {
-  const { data, error } = await sb
-    .from('app_settings')
-    .select('*')
-    .in('key', Object.values(RETIREMENT_SETTING_KEYS));
-  if (error) return alert('Failed to load retirement settings: ' + error.message);
-  const byKey = {};
-  for (const row of data || []) byKey[row.key] = row.value;
-  const spendVal = byKey[RETIREMENT_SETTING_KEYS.spend];
-  document.getElementById('retire-monthly-spend').value = spendVal != null && spendVal !== '' ? Math.round(Number(spendVal)) : '';
-  document.getElementById('retire-pot-growth').value = byKey[RETIREMENT_SETTING_KEYS.potGrowth] ?? '';
-  document.getElementById('retire-spend-increase').value = byKey[RETIREMENT_SETTING_KEYS.spendIncrease] ?? '';
-  document.getElementById('retire-dob').value = byKey[RETIREMENT_SETTING_KEYS.dob] ?? '';
-  document.getElementById('retire-tax-rate').value = byKey[RETIREMENT_SETTING_KEYS.taxRate] ?? '';
-  document.getElementById('retire-other-assets-pension').checked = byKey[RETIREMENT_SETTING_KEYS.otherAssetsPension] === 'true';
-  document.getElementById('retire-state-pension').checked = byKey[RETIREMENT_SETTING_KEYS.statePension] === 'true';
-  document.getElementById('retire-state-pension-date').value = byKey[RETIREMENT_SETTING_KEYS.statePensionStartDate] ?? toISODateLocal(STATE_PENSION_PAYMENT_START);
-  document.getElementById('retire-clear-debt').checked = byKey[RETIREMENT_SETTING_KEYS.clearDebt] === 'true';
-  renderRetirementChart();
+function applySettingsToForm(settings) {
+  const set = (id, v) => { document.getElementById(id).value = v ?? ''; };
+  set('drawdown-rate', drawdownRateOf(settings));
+  const spend = settings[K.spend];
+  set('retire-monthly-spend', spend != null ? Math.round(Number(spend)) : '');
+  set('retire-pot-growth', settings[K.potGrowth]);
+  set('retire-spend-increase', settings[K.spendIncrease]);
+  set('retire-dob', settings[K.dob]);
+  set('retire-tax-rate', settings[K.taxRate]);
+  set('retire-state-pension-date', settings[K.statePensionStartDate] ?? toISODate(STATE_PENSION_PAYMENT_START));
+  document.getElementById('retire-other-assets-pension').checked = settings[K.otherAssetsPension] === true;
+  document.getElementById('retire-state-pension').checked = settings[K.statePension] === true;
+  document.getElementById('retire-clear-debt').checked = settings[K.clearDebt] === true;
 }
 
-document.getElementById('save-retirement-btn').addEventListener('click', async () => {
+// The form as a settings object (blank fields -> null), in the same shape
+// that is stored in app_settings.
+function formSettings() {
+  const num = (id) => toNum(document.getElementById(id).value);
+  const text = (id) => document.getElementById(id).value || null;
+  const checked = (id) => document.getElementById(id).checked;
+  const spend = num('retire-monthly-spend');
+  return {
+    [K.drawdownRate]: num('drawdown-rate'),
+    [K.spend]: spend == null || Number.isNaN(spend) ? spend : Math.round(spend),
+    [K.potGrowth]: num('retire-pot-growth'),
+    [K.spendIncrease]: num('retire-spend-increase'),
+    [K.dob]: text('retire-dob'),
+    [K.taxRate]: num('retire-tax-rate'),
+    [K.otherAssetsPension]: checked('retire-other-assets-pension'),
+    [K.statePension]: checked('retire-state-pension'),
+    [K.statePensionStartDate]: text('retire-state-pension-date'),
+    [K.clearDebt]: checked('retire-clear-debt'),
+  };
+}
+
+document.getElementById('save-retirement-btn').addEventListener('click', (e) => busy(e.currentTarget, async () => {
   const msg = document.getElementById('retirement-msg');
   msg.textContent = '';
   msg.className = 'msg';
 
-  const { data: { user } } = await sb.auth.getUser();
-  const now = new Date().toISOString();
-  const rows = [
-    { user_id: user.id, key: 'pension_drawdown_rate', value: document.getElementById('drawdown-rate').value, updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spend, value: String(Math.round(Number(document.getElementById('retire-monthly-spend').value) || 0)), updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.potGrowth, value: document.getElementById('retire-pot-growth').value, updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.spendIncrease, value: document.getElementById('retire-spend-increase').value, updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.dob, value: document.getElementById('retire-dob').value, updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.taxRate, value: document.getElementById('retire-tax-rate').value, updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.otherAssetsPension, value: document.getElementById('retire-other-assets-pension').checked ? 'true' : 'false', updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.statePension, value: document.getElementById('retire-state-pension').checked ? 'true' : 'false', updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.statePensionStartDate, value: document.getElementById('retire-state-pension-date').value, updated_at: now },
-    { user_id: user.id, key: RETIREMENT_SETTING_KEYS.clearDebt, value: document.getElementById('retire-clear-debt').checked ? 'true' : 'false', updated_at: now },
-  ];
-  const { error } = await sb.from('app_settings').upsert(rows, { onConflict: 'user_id,key' });
-  if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
+  const settings = formSettings();
+  if (Object.values(settings).some(v => typeof v === 'number' && Number.isNaN(v))) {
+    msg.textContent = 'Enter valid numbers.'; msg.className = 'msg error'; return;
+  }
+  try {
+    await saveSettings(settings);
+  } catch (error) {
+    msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return;
+  }
   msg.textContent = 'Saved.';
   msg.className = 'msg ok';
   renderRetirementChart();
-});
-
-async function loadInvestmentValues() {
-  const { data, error } = await sb.from('investment_values').select('*').order('date');
-  if (error) return alert('Failed to load investment values: ' + error.message);
-  investmentValues = data || [];
-  renderRetirementChart();
-}
-
-async function loadDebtsForRetirement() {
-  const [{ data: d, error: debtErr }, { data: dv, error: debtValErr }] = await Promise.all([
-    sb.from('debts').select('*'),
-    sb.from('debt_values').select('*').order('date'),
-  ]);
-  if (debtErr) return alert('Failed to load debts: ' + debtErr.message);
-  if (debtValErr) return alert('Failed to load debt values: ' + debtValErr.message);
-  debts = d || [];
-  debtValues = dv || [];
-  renderRetirementChart();
-}
-
-function currentPotTotals() {
-  const latest = {};
-  for (const v of investmentValues) {
-    const cur = latest[v.account_id];
-    if (!cur || v.date > cur.date || (v.date === cur.date && v.created_at > cur.created_at)) {
-      latest[v.account_id] = v;
-    }
-  }
-  let isaTotal = 0, pensionTotal = 0;
-  for (const acc of accounts) {
-    const v = latest[acc.id];
-    if (!v) continue;
-    if (acc.type === 'ISA') isaTotal += Number(v.value);
-    else if (acc.type === 'Pension') pensionTotal += Number(v.value);
-  }
-  return { isaTotal, pensionTotal };
-}
-
-function otherAssetsPensionTotal() {
-  let total = 0;
-  for (const asset of otherAssets) {
-    if (asset.pension && asset.value != null) total += Number(asset.value);
-  }
-  return total;
-}
-
-function currentTotalDebt() {
-  const latest = {};
-  for (const v of debtValues) {
-    const cur = latest[v.debt_id];
-    if (!cur || v.date > cur.date || (v.date === cur.date && v.created_at > cur.created_at)) {
-      latest[v.debt_id] = v;
-    }
-  }
-  let totalDebt = 0;
-  for (const debt of debts) {
-    const v = latest[debt.id];
-    if (v) totalDebt += Number(v.outstanding_amount);
-  }
-  return totalDebt;
-}
-
-function parseISODateLocal(s) {
-  const [y, m, d] = s.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function toISODateLocal(d) {
-  const pad2 = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function ageAt(dob, atDate) {
-  let years = atDate.getFullYear() - dob.getFullYear();
-  let months = atDate.getMonth() - dob.getMonth();
-  if (atDate.getDate() < dob.getDate()) months--;
-  if (months < 0) { years--; months += 12; }
-  return { years, months };
-}
-
-// State Pension: a flat £650/month in April-2025 money, uprated once a year
-// every April by the Spend Increase by rate — growth keeps accruing from
-// April 2025 regardless, but nothing is actually paid out (and netted off
-// the spend target) until April 2035, reflecting state pension age (67).
-const STATE_PENSION_BASE = 650;
-const STATE_PENSION_GROWTH_START = new Date(2025, 3, 1);
-const STATE_PENSION_PAYMENT_START = new Date(2035, 3, 1);
-
-function statePensionAmountAt(date, spendRatePct, paymentStartDate) {
-  if (date < paymentStartDate) return 0;
-  let years = date.getFullYear() - STATE_PENSION_GROWTH_START.getFullYear();
-  if (date.getMonth() < STATE_PENSION_GROWTH_START.getMonth()) years -= 1;
-  if (years < 0) years = 0;
-  const rate = Math.max(spendRatePct, 0) / 100;
-  return STATE_PENSION_BASE * Math.pow(1 + rate, years);
-}
-
-function simulateRetirement(isa0, pension0, spend0, taxRatePct, growthPct, spendRatePct, maxMonths, statePensionEnabled, statePensionStartDate) {
-  const taxRate = Math.min(Math.max(taxRatePct, 0), 99) / 100;
-  const monthlyGrowth = Math.pow(1 + Math.max(growthPct, 0) / 100, 1 / 12) - 1;
-  const spendRate = Math.max(spendRatePct, 0) / 100;
-
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-
-  let isa = isa0, pension = pension0;
-  const points = [{ date: new Date(today.getFullYear(), today.getMonth(), today.getDate()), isa, pension, total: isa + pension }];
-  let depletion = null;
-
-  for (let m = 0; m < maxMonths; m++) {
-    isa *= (1 + monthlyGrowth);
-    pension *= (1 + monthlyGrowth);
-    const date = new Date(start.getFullYear(), start.getMonth() + m, 1);
-    let target = spend0 * Math.pow(1 + spendRate, m / 12);
-    if (statePensionEnabled) {
-      target = Math.max(0, target - statePensionAmountAt(date, spendRatePct, statePensionStartDate));
-    }
-
-    const totalAB = isa + pension;
-    let desiredIsa = 0, desiredPensionNet = 0;
-    if (totalAB > 0) {
-      desiredIsa = target * isa / totalAB;
-      desiredPensionNet = target * pension / totalAB;
-    } else {
-      desiredIsa = target;
-    }
-    const desiredPensionGross = desiredPensionNet / (1 - taxRate);
-
-    let actualIsa = Math.min(desiredIsa, isa);
-    let shortfall = desiredIsa - actualIsa;
-    let actualPensionGross = Math.min(desiredPensionGross, pension);
-    const actualPensionNet = actualPensionGross * (1 - taxRate);
-    shortfall += desiredPensionNet - actualPensionNet;
-
-    let remainingIsa = isa - actualIsa;
-    let remainingPension = pension - actualPensionGross;
-    if (shortfall > 1e-9) {
-      const extraIsa = Math.min(shortfall, remainingIsa);
-      actualIsa += extraIsa; shortfall -= extraIsa; remainingIsa -= extraIsa;
-      if (shortfall > 1e-9) {
-        const extraPensionGross = Math.min(shortfall / (1 - taxRate), remainingPension);
-        actualPensionGross += extraPensionGross;
-        shortfall -= extraPensionGross * (1 - taxRate);
-        remainingPension -= extraPensionGross;
-      }
-    }
-
-    isa -= actualIsa;
-    pension -= actualPensionGross;
-    if (isa < 1e-6) isa = 0;
-    if (pension < 1e-6) pension = 0;
-
-    points.push({ date, isa, pension, total: isa + pension, target });
-
-    if (shortfall > 1e-6) {
-      depletion = { date };
-      break;
-    }
-  }
-  return { points, depletion };
-}
-
-function retirementNiceStep(range) {
-  const rough = range / 5;
-  const mag = Math.pow(10, Math.floor(Math.log10(rough || 1)));
-  const norm = rough / mag;
-  const step = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
-  return step * mag;
-}
+}));
 
 function retirementNiceCeil(x) {
   if (x <= 0) return 1;
@@ -320,7 +142,7 @@ function buildRetirementSvg(series, points, depletion) {
   const yMax = retirementNiceCeil(Math.max(1, ...allVals) * 1.05);
   const yScale = (v) => pad.top + (1 - v / yMax) * plotH;
 
-  const step = retirementNiceStep(yMax);
+  const step = niceStep(yMax);
   const gridLines = [];
   for (let g = 0; g <= yMax; g += step) {
     const y = yScale(g).toFixed(1);
@@ -329,7 +151,7 @@ function buildRetirementSvg(series, points, depletion) {
   }
 
   const spanYears = spanMs / (365.25 * 24 * 3600 * 1000);
-  const tickStepYears = Math.max(1, Math.round(retirementNiceStep(spanYears / 6)));
+  const tickStepYears = Math.max(1, Math.round(niceStep(spanYears / 6)));
   const firstYear = points[0].date.getFullYear();
   const lastYear = points[points.length - 1].date.getFullYear();
   const yearTicks = [];
@@ -366,17 +188,8 @@ function renderRetirementChart() {
   const legend = document.getElementById('retirement-legend');
   const svg = document.getElementById('retirement-chart');
 
-  const spend0 = parseFloat(document.getElementById('retire-monthly-spend').value);
-  const potGrowthPct = parseFloat(document.getElementById('retire-pot-growth').value);
-  const spendRatePct = parseFloat(document.getElementById('retire-spend-increase').value);
-  const taxRatePct = parseFloat(document.getElementById('retire-tax-rate').value);
-  const dobStr = document.getElementById('retire-dob').value;
-  const statePensionEnabled = document.getElementById('retire-state-pension').checked;
-  const statePensionStartStr = document.getElementById('retire-state-pension-date').value;
-  const clearDebtEnabled = document.getElementById('retire-clear-debt').checked;
-  const otherAssetsPensionEnabled = document.getElementById('retire-other-assets-pension').checked;
-
-  if (!spend0 || Number.isNaN(potGrowthPct) || Number.isNaN(spendRatePct) || Number.isNaN(taxRatePct)) {
+  const cfg = retirementConfig(formSettings());
+  if (!cfg) {
     wrap.classList.add('hidden');
     legend.innerHTML = '';
     summary.textContent = '';
@@ -384,16 +197,10 @@ function renderRetirementChart() {
     return;
   }
 
-  let { isaTotal, pensionTotal } = currentPotTotals();
-  // "Include Other Assets in Pension" adds other assets flagged pension=true
-  // into the non-taxable (ISA) pot, not the taxable Pension pot.
-  if (otherAssetsPensionEnabled) isaTotal += otherAssetsPensionTotal();
-  if (clearDebtEnabled) isaTotal = Math.max(0, isaTotal - currentTotalDebt());
-  const dob = dobStr ? parseISODateLocal(dobStr) : null;
-  const statePensionStartDate = statePensionStartStr ? parseISODateLocal(statePensionStartStr) : STATE_PENSION_PAYMENT_START;
-  const maxMonths = dob ? Math.max(12, (100 - ageAt(dob, new Date()).years) * 12) : 60 * 12;
-
-  const result = simulateRetirement(isaTotal, pensionTotal, spend0, taxRatePct, potGrowthPct, spendRatePct, maxMonths, statePensionEnabled, statePensionStartDate);
+  const pots = retirementPots(accountTotals(accounts, latestAccount), otherAssets, cfg);
+  const dob = cfg.dob;
+  const maxMonths = retirementHorizonMonths(cfg);
+  const result = simulateRetirement(cfg, retirementStartingIsa(pots, cfg, debtTotal(debts, latestDebt)), pots.pension, maxMonths);
 
   empty.classList.add('hidden');
   wrap.classList.remove('hidden');
@@ -487,21 +294,21 @@ document.getElementById('account-modal-delete').addEventListener('click', async 
   if (!editingAccountId) return;
   if (!confirm('Delete this account? This can\'t be undone.')) return;
   const { error } = await sb.from('accounts').delete().eq('id', editingAccountId);
-  if (error) return alert('Failed to delete: ' + error.message);
+  if (failed('Failed to delete', error)) return;
   closeAccountModal();
   await loadAccounts();
 });
 
-accountForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+onSubmit(accountForm, async () => {
   const name = document.getElementById('new-account-name').value.trim();
   const type = document.getElementById('new-account-type').value;
   if (!name) return;
   const record = { name, type };
   if (type === 'Savings') {
-    const rate = document.getElementById('new-account-rate').value;
+    const rate = toNum(document.getElementById('new-account-rate').value);
+    if (Number.isNaN(rate)) return notify('Enter a valid interest rate.');
     const note = document.getElementById('new-account-note').value.trim();
-    record.interest_rate = rate === '' ? null : rate;
+    record.interest_rate = rate;
     record.access = document.getElementById('new-account-access').value;
     record.taxable = document.getElementById('new-account-taxable').value === 'Yes';
     record.note = note === '' ? null : note;
@@ -514,11 +321,10 @@ accountForm.addEventListener('submit', async (e) => {
 
   if (editingAccountId) {
     const { error } = await sb.from('accounts').update(record).eq('id', editingAccountId);
-    if (error) return alert('Failed to save changes: ' + error.message);
+    if (failed('Failed to save changes', error)) return;
   } else {
-    const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb.from('accounts').insert({ ...record, user_id: user.id });
-    if (error) return alert('Failed to add account: ' + error.message);
+    const { error } = await sb.from('accounts').insert({ ...record });
+    if (failed('Failed to add account', error)) return;
   }
   closeAccountModal();
   await loadAccounts();
@@ -528,7 +334,7 @@ accountForm.addEventListener('submit', async (e) => {
 
 async function loadAccounts() {
   const { data, error } = await sb.from('accounts').select('*').order('name');
-  if (error) return alert('Failed to load accounts: ' + error.message);
+  if (failed('Failed to load accounts', error)) return;
   accounts = data || [];
   renderAccounts();
   renderRetirementChart();
@@ -564,7 +370,7 @@ function renderAccounts() {
 
 async function loadShares() {
   const { data, error } = await sb.from('shares').select('*').order('title');
-  if (error) return alert('Failed to load shares: ' + error.message);
+  if (failed('Failed to load shares', error)) return;
   shares = data || [];
   renderShares();
 }
@@ -597,13 +403,15 @@ function renderShares() {
     `;
     row.querySelector('.share-edit-btn').addEventListener('click', () => openShareModal(share));
     const priceInput = row.querySelector('.share-price-input');
-    row.querySelector('.share-price-save').addEventListener('click', async () => {
-      const newPrice = priceInput.value;
-      if (newPrice === '') return;
+    const saveBtn = row.querySelector('.share-price-save');
+    saveBtn.addEventListener('click', () => busy(saveBtn, async () => {
+      const newPrice = toNum(priceInput.value);
+      if (newPrice == null) return;
+      if (Number.isNaN(newPrice) || newPrice < 0) return notify('Enter a valid price.');
       const { error } = await sb.from('shares').update({ price: newPrice, updated_at: new Date().toISOString() }).eq('id', share.id);
-      if (error) return alert('Failed to update price: ' + error.message);
+      if (failed('Failed to update price', error)) return;
       await loadShares();
-    });
+    }));
     grid.appendChild(row);
   }
 }
@@ -642,27 +450,26 @@ document.getElementById('share-modal-delete').addEventListener('click', async ()
   if (!editingShareId) return;
   if (!confirm('Delete this share? This can\'t be undone.')) return;
   const { error } = await sb.from('shares').delete().eq('id', editingShareId);
-  if (error) return alert('Failed to delete: ' + error.message);
+  if (failed('Failed to delete', error)) return;
   closeShareModal();
   await loadShares();
 });
 
-shareForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+onSubmit(shareForm, async () => {
   const title = document.getElementById('new-share-title').value.trim();
   const trading_code = document.getElementById('new-share-code').value.trim();
-  const quantity = document.getElementById('new-share-quantity').value;
-  const priceVal = document.getElementById('new-share-price').value;
-  if (!title || !trading_code || quantity === '') return;
-  const record = { title, trading_code, quantity, price: priceVal === '' ? null : priceVal, updated_at: new Date().toISOString() };
+  const quantity = toNum(document.getElementById('new-share-quantity').value);
+  const price = toNum(document.getElementById('new-share-price').value);
+  if (!title || !trading_code || quantity == null) return;
+  if (Number.isNaN(quantity) || Number.isNaN(price)) return notify('Enter valid numbers.');
+  const record = { title, trading_code, quantity, price, updated_at: new Date().toISOString() };
 
   if (editingShareId) {
     const { error } = await sb.from('shares').update(record).eq('id', editingShareId);
-    if (error) return alert('Failed to save changes: ' + error.message);
+    if (failed('Failed to save changes', error)) return;
   } else {
-    const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb.from('shares').insert({ ...record, user_id: user.id });
-    if (error) return alert('Failed to add share: ' + error.message);
+    const { error } = await sb.from('shares').insert({ ...record });
+    if (failed('Failed to add share', error)) return;
   }
   closeShareModal();
   await loadShares();
@@ -672,7 +479,7 @@ shareForm.addEventListener('submit', async (e) => {
 
 async function loadOtherAssets() {
   const { data, error } = await sb.from('other_assets').select('*').order('title');
-  if (error) return alert('Failed to load other assets: ' + error.message);
+  if (failed('Failed to load other assets', error)) return;
   otherAssets = data || [];
   renderOtherAssets();
   renderRetirementChart();
@@ -738,33 +545,26 @@ document.getElementById('other-asset-modal-delete').addEventListener('click', as
   if (!editingOtherAssetId) return;
   if (!confirm('Delete this asset? This can\'t be undone.')) return;
   const { error } = await sb.from('other_assets').delete().eq('id', editingOtherAssetId);
-  if (error) return alert('Failed to delete: ' + error.message);
+  if (failed('Failed to delete', error)) return;
   closeOtherAssetModal();
   await loadOtherAssets();
 });
 
-otherAssetForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+onSubmit(otherAssetForm, async () => {
   const title = document.getElementById('new-other-asset-title').value.trim();
   if (!title) return;
   const pension = document.getElementById('new-other-asset-pension').value === 'Yes';
   const type = document.getElementById('new-other-asset-type').value.trim() || null;
-  const quantityRaw = document.getElementById('new-other-asset-quantity').value;
-  const quantity = quantityRaw === '' ? null : parseFloat(quantityRaw);
+  const quantity = toNum(document.getElementById('new-other-asset-quantity').value);
+  if (Number.isNaN(quantity) || quantity < 0) return notify('Enter a valid quantity.');
 
   if (editingOtherAssetId) {
-    const changes = { title, pension, type, quantity };
-    // Keep the stored value in step with quantity x unit price.
-    const existing = otherAssets.find(a => a.id === editingOtherAssetId);
-    if (existing && existing.unit_price != null) {
-      changes.value = Math.round((quantity ?? 1) * Number(existing.unit_price) * 100) / 100;
-    }
-    const { error } = await sb.from('other_assets').update(changes).eq('id', editingOtherAssetId);
-    if (error) return alert('Failed to save changes: ' + error.message);
+    // value (quantity x unit price) is generated by the database.
+    const { error } = await sb.from('other_assets').update({ title, pension, type, quantity }).eq('id', editingOtherAssetId);
+    if (failed('Failed to save changes', error)) return;
   } else {
-    const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb.from('other_assets').insert({ title, pension, type, quantity, user_id: user.id });
-    if (error) return alert('Failed to add asset: ' + error.message);
+    const { error } = await sb.from('other_assets').insert({ title, pension, type, quantity });
+    if (failed('Failed to add asset', error)) return;
   }
   closeOtherAssetModal();
   await loadOtherAssets();

@@ -1,37 +1,16 @@
-const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
-
-const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
-const fmtDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-
-function pad2(n) { return String(n).padStart(2, '0'); }
-function toISODate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
-function parseISODate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+// Account history. Shared code lives in lib.js.
 
 let accounts = [];
 let selectedView = 'value-chart'; // 'table' | 'chart' | 'value-chart'
 let selectedMonths = 3;
 
-// ---------- Auth ----------
-
-const appView = document.getElementById('app-view');
-
-document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
-
-sb.auth.onAuthStateChange((_event, session) => {
-  if (session) {
-    appView.classList.remove('hidden');
-    document.getElementById('user-email').textContent = session.user.email;
-    loadAccounts();
-  } else {
-    window.location.href = 'index.html';
-  }
-});
+initProtectedPage(loadAccounts);
 
 // ---------- Accounts dropdown ----------
 
 async function loadAccounts() {
   const { data, error } = await sb.from('accounts').select('*').order('type').order('name');
-  if (error) return alert('Failed to load accounts: ' + error.message);
+  if (failed('Failed to load accounts', error)) return;
   accounts = data || [];
 
   const select = document.getElementById('account-select');
@@ -110,7 +89,7 @@ async function loadHistory() {
     .eq('account_id', accountId)
     .gte('date', fromStr)
     .order('date', { ascending: false });
-  if (error) return alert('Failed to load history: ' + error.message);
+  if (failed('Failed to load history', error)) return;
 
   if (!data || data.length === 0) {
     empty.textContent = 'No values recorded for this account in the selected period.';
@@ -194,7 +173,7 @@ async function loadChart() {
     .eq('account_id', accountId)
     .gte('date', toISODate(fetchFrom))
     .order('date', { ascending: true });
-  if (error) return alert('Failed to load history: ' + error.message);
+  if (failed('Failed to load history', error)) return;
 
   const points = computeAnnualGrowthSeries(data || [], toISODate(windowStart), toISODate(today));
 
@@ -241,7 +220,7 @@ async function loadValueChart() {
     .eq('account_id', accountId)
     .gte('date', toISODate(from))
     .order('date', { ascending: true });
-  if (error) return alert('Failed to load history: ' + error.message);
+  if (failed('Failed to load history', error)) return;
 
   if (!data || data.length === 0) {
     empty.textContent = `No values recorded for this account in the last ${selectedMonths} months.`;
@@ -274,14 +253,6 @@ const VALUE_CHART = {
   tick: fmtGBPCompact,
   tip: fmtGBP,
 };
-
-function niceStep(range) {
-  const rough = range / 5;
-  const mag = Math.pow(10, Math.floor(Math.log10(rough || 1)));
-  const norm = rough / mag;
-  const step = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
-  return step * mag;
-}
 
 function buildHistoryChartSvg(points, opts) {
   const W = 760, H = 260;

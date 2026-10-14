@@ -700,3 +700,27 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 }
 
 .hidden { display: none !important; }
+
+/* Toast notifications (lib.js notify) */
+#toast-host {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+.toast {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--good);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  cursor: pointer;
+}
+.toast.error { border-left-color: var(--critical); }

@@ -67,55 +67,22 @@
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
 <script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
+<script src="lib.js?v=4" onerror="showFatal('Failed to load lib.js')"></script>
 <script>
-const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
-
-const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
-const fmtDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
 // Latest investment_values row per account, keyed by account id.
 let latest = {};
 
-// ---------- Auth ----------
-
-const appView = document.getElementById('app-view');
-
-document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
-
-sb.auth.onAuthStateChange((_event, session) => {
-  if (session) {
-    appView.classList.remove('hidden');
-    document.getElementById('user-email').textContent = session.user.email;
-    loadAll();
-  } else {
-    window.location.href = 'index.html';
-  }
-});
+initProtectedPage(loadAll);
 
 // ---------- Load ----------
 
 async function loadAll() {
   const [accRes, valRes] = await Promise.all([
     sb.from('accounts').select('*').order('type').order('name'),
-    sb.from('investment_values').select('*').order('date'),
+    sb.from('latest_account_values').select('*'),
   ]);
-  if (accRes.error) return alert('Failed to load accounts: ' + accRes.error.message);
-  if (valRes.error) return alert('Failed to load values: ' + valRes.error.message);
-
-  // Rows are ordered by date ascending, so the last one seen per account wins.
-  // Ties on date fall back to created_at when present.
-  latest = {};
-  for (const v of valRes.data || []) {
-    const prev = latest[v.account_id];
-    if (!prev || v.date > prev.date || (v.date === prev.date && (v.created_at || '') >= (prev.created_at || ''))) {
-      latest[v.account_id] = v;
-    }
-  }
-
+  if (failed('Failed to load accounts', accRes.error) || failed('Failed to load values', valRes.error)) return;
+  latest = indexBy(valRes.data || [], 'account_id');
   render(accRes.data || []);
 }
 
@@ -196,9 +163,12 @@ function onRowEdit(e) {
 document.getElementById('correct-rows').addEventListener('input', onRowEdit);
 document.getElementById('correct-rows').addEventListener('change', onRowEdit);
 
-document.getElementById('correct-rows').addEventListener('click', async (e) => {
+document.getElementById('correct-rows').addEventListener('click', (e) => {
   const btn = e.target.closest('.save-btn');
-  if (!btn) return;
+  if (btn) busy(btn, () => saveRow(btn));
+});
+
+async function saveRow(btn) {
   const tr = btn.closest('tr');
   const id = tr.dataset.id;
   const msg = tr.querySelector('.row-msg');
@@ -206,29 +176,27 @@ document.getElementById('correct-rows').addEventListener('click', async (e) => {
   const contribInput = tr.querySelector('.contribution-input');
 
   const update = {};
-  if (valueInput.value.trim() === '' || isNaN(Number(valueInput.value))) {
+  const value = toNum(valueInput.value);
+  if (value == null || Number.isNaN(value) || value < 0) {
     msg.textContent = 'Enter a value.'; msg.className = 'row-msg error'; return;
   }
-  update.value = valueInput.value;
+  update.value = value;
   if (contribInput) {
-    const c = contribInput.value.trim();
-    if (c !== '' && isNaN(Number(c))) {
+    const c = toNum(contribInput.value);
+    if (Number.isNaN(c)) {
       msg.textContent = 'Enter a valid contribution.'; msg.className = 'row-msg error'; return;
     }
-    update.contribution = c === '' ? null : c;
+    update.contribution = c;
   }
 
-  btn.disabled = true;
   const { data, error } = await sb.from('investment_values').update(update).eq('id', id).select();
   if (error) {
     msg.textContent = 'Failed: ' + error.message; msg.className = 'row-msg error';
-    btn.disabled = false;
     return;
   }
   if (!data || data.length === 0) {
     // RLS silently filters updates it doesn't allow, returning zero rows.
     msg.textContent = 'Not updated — no permission to edit this entry.'; msg.className = 'row-msg error';
-    btn.disabled = false;
     return;
   }
 
@@ -237,7 +205,7 @@ document.getElementById('correct-rows').addEventListener('click', async (e) => {
   if (contribInput) contribInput.value = contribInput.dataset.original = saved.contribution != null ? String(Number(saved.contribution)) : '';
   tr.classList.remove('dirty');
   msg.textContent = 'Saved.'; msg.className = 'row-msg ok';
-});
+}
 </script>
 </body>
 </html>

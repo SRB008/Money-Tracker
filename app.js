@@ -1,4 +1,4 @@
-const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+// Assets page. Shared code lives in lib.js.
 
 const SERIES_COLORS = [
   'var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)',
@@ -9,66 +9,31 @@ function seriesColor(i) {
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
 }
 
-const fmtGBP = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
-const fmtGBP0 = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(n);
-
-// ---------- Date helpers (local-time safe; avoids UTC/ISO-string shifting) ----------
-
-function pad2(n) { return String(n).padStart(2, '0'); }
-function toISODate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
-function parseISODate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
-function startOfDay(d) { const r = new Date(d); r.setHours(0, 0, 0, 0); return r; }
-
 let accounts = [];
 let values = [];
 let shares = [];
 let otherAssets = [];
 
-// ---------- Auth ----------
-
-const appView = document.getElementById('app-view');
-
-document.getElementById('signout-btn').addEventListener('click', () => sb.auth.signOut());
-
-sb.auth.onAuthStateChange((_event, session) => {
-  if (session) {
-    appView.classList.remove('hidden');
-    document.getElementById('user-email').textContent = session.user.email;
-    loadAll();
-  } else {
-    window.location.href = 'index.html';
-  }
-});
+initProtectedPage(loadAll);
 
 // ---------- Data loading ----------
 
+let latest = {};   // account_id -> newest value row
+
 async function loadAll() {
-  const [{ data: acc, error: accErr }, { data: val, error: valErr }, { data: shr, error: shrErr }, { data: oth, error: othErr }] = await Promise.all([
+  const results = await Promise.all([
     sb.from('accounts').select('*').order('type').order('name'),
     sb.from('investment_values').select('*').order('date'),
     sb.from('shares').select('*').order('title'),
     sb.from('other_assets').select('*').order('title'),
   ]);
-  if (accErr) return alert('Failed to load accounts: ' + accErr.message);
-  if (valErr) return alert('Failed to load values: ' + valErr.message);
-  if (shrErr) return alert('Failed to load shares: ' + shrErr.message);
-  if (othErr) return alert('Failed to load other assets: ' + othErr.message);
-  accounts = acc || [];
-  values = val || [];
-  shares = shr || [];
-  otherAssets = oth || [];
-  renderAll();
-}
-
-function latestValueByAccount() {
-  const latest = {};
-  for (const v of values) {
-    const cur = latest[v.account_id];
-    if (!cur || v.date > cur.date || (v.date === cur.date && v.created_at > cur.created_at)) {
-      latest[v.account_id] = v;
-    }
+  const labels = ['accounts', 'values', 'shares', 'other assets'];
+  for (let i = 0; i < results.length; i++) {
+    if (failed(`Failed to load ${labels[i]}`, results[i].error)) return;
   }
-  return latest;
+  [accounts, values, shares, otherAssets] = results.map(r => r.data || []);
+  latest = latestBy(values, 'account_id');
+  renderAll();
 }
 
 function renderAll() {
@@ -83,51 +48,26 @@ function renderAll() {
 // ---------- Stats ----------
 
 function renderStats() {
-  const latest = latestValueByAccount();
-  const totals = { Savings: 0, ISA: 0, Pension: 0 };
-  let grandTotal = 0;
-  for (const acc of accounts) {
-    const v = latest[acc.id];
-    if (v) {
-      totals[acc.type] = (totals[acc.type] || 0) + Number(v.value);
-      grandTotal += Number(v.value);
-    }
-  }
-  const otherAssetsTotal = sharesTotalValue() + otherAssetsValueTotal();
-  grandTotal += otherAssetsTotal;
+  const totals = accountTotals(accounts, latest);
+  const otherTotal = sharesTotal(shares) + otherAssetsTotal(otherAssets);
 
   const totalRow = document.getElementById('stat-row-total');
   totalRow.innerHTML = '';
-  totalRow.appendChild(statTile('Total', fmtGBP0(grandTotal), true));
+  totalRow.appendChild(statTile('Total', fmtGBP0(totals.total + otherTotal), { isTotal: true }));
 
   const row = document.getElementById('stat-row-accounts');
   row.innerHTML = '';
   for (const type of ['ISA', 'Pension']) {
-    row.appendChild(statTile(type, fmtGBP0(totals[type] || 0), false));
+    row.appendChild(statTile(type, fmtGBP0(totals.byType[type] || 0)));
   }
-  row.appendChild(statTile('Savings', fmtGBP0(totals.Savings || 0), false));
-  row.appendChild(statTile('Other Assets', fmtGBP0(otherAssetsTotal), false));
+  row.appendChild(statTile('Savings', fmtGBP0(totals.byType.Savings || 0)));
+  row.appendChild(statTile('Other Assets', fmtGBP0(otherTotal)));
 
-  renderSavingsPerformance(latest);
+  renderSavingsPerformance();
 }
 
-function renderSavingsPerformance(latest) {
-  const groups = { taxable: { sum: 0, interest: 0 }, isa: { sum: 0, interest: 0 }, all: { sum: 0, interest: 0 } };
-  for (const acc of accounts) {
-    if (acc.type !== 'Savings') continue;
-    const v = latest[acc.id];
-    if (!v) continue;
-    const value = Number(v.value);
-    const interest = value * Number(acc.interest_rate || 0) / 100;
-    const targets = [groups.all];
-    if (acc.taxable === true) targets.push(groups.taxable);
-    else if (acc.taxable === false) targets.push(groups.isa);
-    for (const g of targets) {
-      g.sum += value;
-      g.interest += interest;
-    }
-  }
-
+function renderSavingsPerformance() {
+  const groups = savingsPerformance(accounts, latest);
   const row = document.getElementById('stat-row-savings');
   row.innerHTML = '';
   for (const [label, rateLabel, g] of [
@@ -135,19 +75,12 @@ function renderSavingsPerformance(latest) {
     ['ISA Savings', 'ISA Interest Rate', groups.isa],
     ['All Savings', 'Interest Rate', groups.all],
   ]) {
-    const rate = g.sum > 0 ? (g.interest / g.sum) * 100 : 0;
-    const tile = statTile(label, fmtGBP0(g.sum), false);
+    const tile = statTile(label, fmtGBP0(g.sum));
     tile.insertAdjacentHTML('beforeend', `
-      <div class="sub-value">${rateLabel}: ${rate.toFixed(2)}%</div>
+      <div class="sub-value">${rateLabel}: ${g.rate.toFixed(2)}%</div>
       <div class="sub-value">Potential Interest: ${fmtGBP0(g.interest)} pa</div>`);
     row.appendChild(tile);
   }
-}
-function statTile(label, value, isTotal) {
-  const div = document.createElement('div');
-  div.className = 'stat-tile' + (isTotal ? ' total' : '');
-  div.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
-  return div;
 }
 
 // ---------- Accounts ----------
@@ -157,7 +90,6 @@ const expandedAccounts = new Set();
 function renderAccounts() {
   const grid = document.getElementById('accounts-grid');
   grid.innerHTML = '';
-  const latest = latestValueByAccount();
   const types = ['ISA', 'Pension', 'Savings'];
   const stack = document.createElement('div');
   stack.className = 'type-group-stack';
@@ -235,14 +167,12 @@ document.querySelectorAll('#value-tabs .tab-btn').forEach(btn => {
 });
 
 document.querySelectorAll('.save-tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (btn.dataset.tab === 'Other') saveOtherAssets();
-    else saveTabValues(btn.dataset.tab);
-  });
+  btn.addEventListener('click', () => busy(btn, () => (
+    btn.dataset.tab === 'Other' ? saveOtherAssets() : saveTabValues(btn.dataset.tab)
+  )));
 });
 
 function renderValueTabs() {
-  const latest = latestValueByAccount();
   for (const tabName of Object.keys(VALUE_TABS)) {
     const types = VALUE_TABS[tabName];
     const showContribution = tabName === 'Investments';
@@ -287,25 +217,28 @@ async function saveTabValues(tabName) {
   const msg = document.getElementById('msg-' + tabName);
   msg.textContent = '';
   msg.className = 'msg';
+  const fail = (text) => { msg.textContent = text; msg.className = 'msg error'; };
   const date = dateInput.value;
-  if (!date) { msg.textContent = 'Pick a date.'; msg.className = 'msg error'; return; }
+  if (!date) return fail('Pick a date.');
 
   const container = document.getElementById('rows-' + tabName);
-  const entries = [...container.querySelectorAll('.value-input')]
-    .filter(input => input.value.trim() !== '')
-    .map(input => {
-      const entry = { account_id: input.dataset.accountId, date, value: input.value };
-      const contribInput = container.querySelector(`.contribution-input[data-account-id="${input.dataset.accountId}"]`);
-      if (contribInput && contribInput.value.trim() !== '') {
-        entry.contribution = contribInput.value;
-      }
-      return entry;
-    });
-  if (entries.length === 0) { msg.textContent = 'Enter at least one value.'; msg.className = 'msg error'; return; }
+  const entries = [];
+  for (const input of container.querySelectorAll('.value-input')) {
+    const value = toNum(input.value);
+    if (value == null) continue;
+    const entry = { account_id: input.dataset.accountId, date, value };
+    const contribInput = container.querySelector(`.contribution-input[data-account-id="${input.dataset.accountId}"]`);
+    const contribution = contribInput ? toNum(contribInput.value) : null;
+    if (Number.isNaN(value) || value < 0 || Number.isNaN(contribution)) return fail('Enter valid numbers.');
+    if (contribution != null) entry.contribution = contribution;
+    entries.push(entry);
+  }
+  if (entries.length === 0) return fail('Enter at least one value.');
 
-  const { data: { user } } = await sb.auth.getUser();
-  const { error } = await sb.from('investment_values').insert(entries.map(e => ({ ...e, user_id: user.id })));
-  if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
+  // One statement, so all rows save or none do; saving again for the same
+  // date replaces that day's value rather than adding a duplicate.
+  const { error } = await sb.from('investment_values').upsert(entries, { onConflict: 'account_id,date' });
+  if (error) return fail('Failed to save: ' + error.message);
   msg.textContent = 'Saved.';
   msg.className = 'msg ok';
   await loadAll();
@@ -314,14 +247,6 @@ async function saveTabValues(tabName) {
 // ---------- Other assets ----------
 // Unlike Savings/Investments, "Other" assets have no date history — each row
 // holds a single current value that Save simply overwrites in place.
-
-function otherAssetsValueTotal() {
-  let total = 0;
-  for (const asset of otherAssets) {
-    if (asset.value != null) total += Number(asset.value);
-  }
-  return total;
-}
 
 function renderOtherAssets() {
   const container = document.getElementById('rows-Other');
@@ -352,22 +277,23 @@ async function saveOtherAssets() {
   const msg = document.getElementById('msg-Other');
   msg.textContent = '';
   msg.className = 'msg';
+  const fail = (text) => { msg.textContent = text; msg.className = 'msg error'; };
 
   const container = document.getElementById('rows-Other');
-  const updates = [...container.querySelectorAll('.value-input')]
-    .filter(input => input.value.trim() !== '')
-    .map(input => ({ id: input.dataset.assetId, unitPrice: Number(input.value) }));
-  if (updates.length === 0) { msg.textContent = 'Enter at least one value.'; msg.className = 'msg error'; return; }
-
-  for (const u of updates) {
-    // value is stored as quantity x unit price so totals elsewhere can just sum it;
-    // an asset with no quantity set counts as a single unit.
-    const asset = otherAssets.find(a => a.id === u.id);
-    const qty = asset && asset.quantity != null ? Number(asset.quantity) : 1;
-    const value = Math.round(qty * u.unitPrice * 100) / 100;
-    const { error } = await sb.from('other_assets').update({ unit_price: u.unitPrice, value, updated_at: new Date().toISOString() }).eq('id', u.id);
-    if (error) { msg.textContent = 'Failed to save: ' + error.message; msg.className = 'msg error'; return; }
+  const rows = [];
+  for (const input of container.querySelectorAll('.value-input')) {
+    const unitPrice = toNum(input.value);
+    if (unitPrice == null) continue;
+    if (Number.isNaN(unitPrice) || unitPrice < 0) return fail('Enter valid numbers.');
+    const asset = otherAssets.find(a => a.id === input.dataset.assetId);
+    // title is NOT NULL so it must accompany the id in an upsert; the stored
+    // value (quantity x unit price) is generated by the database.
+    rows.push({ id: asset.id, title: asset.title, unit_price: unitPrice, updated_at: new Date().toISOString() });
   }
+  if (rows.length === 0) return fail('Enter at least one value.');
+
+  const { error } = await sb.from('other_assets').upsert(rows, { onConflict: 'id' });
+  if (error) return fail('Failed to save: ' + error.message);
   msg.textContent = 'Saved.';
   msg.className = 'msg ok';
   await loadAll();
@@ -379,14 +305,16 @@ async function saveOtherAssets() {
 // update dates. Contributions are subtracted from the raw gain so only
 // organic growth counts: pct = (currentTotal - baselineTotal - contributions) / baselineTotal.
 
+// entries are ordered by date ascending (one per account per day), so the
+// newest entry on or before dateStr is found by binary search.
 function valueAsOf(entries, dateStr) {
-  let result = null;
-  for (const e of entries) {
-    if (e.date <= dateStr && (!result || e.date > result.date || (e.date === result.date && e.created_at > result.created_at))) {
-      result = e;
-    }
+  let lo = 0, hi = entries.length - 1, found = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (entries[mid].date <= dateStr) { found = entries[mid]; lo = mid + 1; }
+    else hi = mid - 1;
   }
-  return result;
+  return found;
 }
 
 // Growth series for a single set of entries (one account, or the combined
@@ -506,14 +434,6 @@ function renderPerformanceChart() {
   svg.innerHTML = buildPerformanceSvg(visibleSeries, baselineStr, todayStr);
 }
 
-function niceStep(range) {
-  const rough = range / 5;
-  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
-  const norm = rough / mag;
-  const step = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
-  return step * mag;
-}
-
 function buildPerformanceSvg(series, baselineStr, todayStr) {
   const W = 760, H = 260;
   const pad = { left: 48, right: 16, top: 16, bottom: 28 };
@@ -605,26 +525,17 @@ async function fetchSharePrice(tradingCode) {
 const refreshedShareIds = new Set();
 
 async function updateSharePrice(share, btn) {
-  btn.disabled = true;
-  try {
-    const price = await fetchSharePrice(share.trading_code);
-    const { error } = await sb.from('shares').update({ price, updated_at: new Date().toISOString() }).eq('id', share.id);
-    if (error) { alert('Failed to save price: ' + error.message); return; }
-    refreshedShareIds.add(share.id);
-    await loadAll();
-  } catch (err) {
-    alert('Failed to fetch price: ' + err.message);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function sharesTotalValue() {
-  let total = 0;
-  for (const share of shares) {
-    if (share.price != null) total += Number(share.price) * Number(share.quantity);
-  }
-  return total;
+  await busy(btn, async () => {
+    try {
+      const price = await fetchSharePrice(share.trading_code);
+      const { error } = await sb.from('shares').update({ price, updated_at: new Date().toISOString() }).eq('id', share.id);
+      if (failed('Failed to save price', error)) return;
+      refreshedShareIds.add(share.id);
+      await loadAll();
+    } catch (err) {
+      notify('Failed to fetch price: ' + err.message);
+    }
+  });
 }
 
 function renderShares() {
@@ -698,34 +609,28 @@ document.getElementById('share-modal-delete').addEventListener('click', async ()
   if (!editingShareId) return;
   if (!confirm('Delete this share? This can\'t be undone.')) return;
   const { error } = await sb.from('shares').delete().eq('id', editingShareId);
-  if (error) return alert('Failed to delete: ' + error.message);
+  if (failed('Failed to delete', error)) return;
   closeShareModal();
   await loadAll();
 });
 
-shareForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+onSubmit(shareForm, async () => {
   const title = document.getElementById('new-share-title').value.trim();
   const trading_code = document.getElementById('new-share-code').value.trim();
-  const quantity = document.getElementById('new-share-quantity').value;
-  const priceVal = document.getElementById('new-share-price').value;
-  if (!title || !trading_code || quantity === '') return;
-  const record = { title, trading_code, quantity, price: priceVal === '' ? null : priceVal, updated_at: new Date().toISOString() };
+  const quantity = toNum(document.getElementById('new-share-quantity').value);
+  const price = toNum(document.getElementById('new-share-price').value);
+  if (!title || !trading_code || quantity == null) return;
+  if (Number.isNaN(quantity) || Number.isNaN(price)) return notify('Enter valid numbers.');
+  const record = { title, trading_code, quantity, price, updated_at: new Date().toISOString() };
 
   if (editingShareId) {
     const { error } = await sb.from('shares').update(record).eq('id', editingShareId);
-    if (error) return alert('Failed to save changes: ' + error.message);
+    if (failed('Failed to save changes', error)) return;
   } else {
-    const { data: { user } } = await sb.auth.getUser();
-    const { error } = await sb.from('shares').insert({ ...record, user_id: user.id });
-    if (error) return alert('Failed to add share: ' + error.message);
+    const { error } = await sb.from('shares').insert(record);
+    if (failed('Failed to add share', error)) return;
   }
   closeShareModal();
   await loadAll();
 });
 
-// ---------- utils ----------
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
