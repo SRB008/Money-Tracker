@@ -38,6 +38,7 @@ async function loadAll() {
   renderAccounts();
   renderShares();
   renderOtherAssets();
+  renderDebts();
   renderRetirementChart();
 }
 
@@ -569,3 +570,45 @@ onSubmit(otherAssetForm, async () => {
   closeOtherAssetModal();
   await loadOtherAssets();
 });
+
+// ---------- Debts ----------
+
+async function loadDebts() {
+  const [d, dv] = await Promise.all([
+    sb.from('debts').select('*').order('name'),
+    sb.from('latest_debt_values').select('*'),
+  ]);
+  if (failed('Failed to load debts', d.error) || failed('Failed to load debt values', dv.error)) return;
+  debts = d.data || [];
+  latestDebt = indexBy(dv.data || [], 'debt_id');
+  renderDebts();
+  renderRetirementChart();
+}
+
+const openDebtModal = initDebtModal(loadDebts);
+document.getElementById('add-debt-btn').addEventListener('click', () => openDebtModal());
+
+function renderDebts() {
+  const grid = document.getElementById('debts-grid');
+  grid.innerHTML = '';
+  if (debts.length === 0) {
+    grid.innerHTML = '<div class="empty">No debts yet — add one to get started.</div>';
+    return;
+  }
+  for (const debt of debts) {
+    const v = latestDebt[debt.id];
+    const row = document.createElement('div');
+    row.className = 'expense-row';
+    row.innerHTML = `
+      <div class="expense-row-main">
+        <span class="expense-name">${escapeHtml(debt.name)}</span>
+        <span class="expense-amount">${debt.interest_rate != null ? Number(debt.interest_rate) + '%' : '—'}</span>
+        <span class="expense-amount">${debt.end_date ? fmtDate(debt.end_date) : '—'}</span>
+        <span class="expense-amount">${v ? fmtGBP(v.outstanding_amount) : '—'}</span>
+        <button type="button" class="share-edit-btn" aria-label="Edit ${escapeHtml(debt.name)}">&#9998;</button>
+      </div>
+    `;
+    row.querySelector('.share-edit-btn').addEventListener('click', () => openDebtModal(debt));
+    grid.appendChild(row);
+  }
+}
