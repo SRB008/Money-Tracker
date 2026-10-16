@@ -1,6 +1,26 @@
 // Shared helpers for every page. Load after config.js and before the page script.
 
-const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+// A stored session can hold an expired or stale token (laptop asleep, long idle
+// tab). When the API rejects the token, refresh the session and retry once; if
+// that fails the session is dead, so sign out and let the page show sign-in.
+async function fetchWithJwtRetry(input, init = {}) {
+  const res = await fetch(input, init);
+  if (res.status !== 401) return res;
+  const body = await res.clone().text().catch(() => '');
+  if (!/jwt/i.test(body)) return res;
+  const { data, error } = await sb.auth.refreshSession();
+  if (error || !data.session) {
+    await sb.auth.signOut();
+    return res;
+  }
+  const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+  headers.set('Authorization', `Bearer ${data.session.access_token}`);
+  return fetch(input, { ...init, headers });
+}
+
+const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
+  global: { fetch: fetchWithJwtRetry },
+});
 
 // ---------- Formatting ----------
 
