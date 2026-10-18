@@ -1,41 +1,103 @@
-// Account history. Shared code lives in lib.js.
-
+// Account history card on investments.html. Shared code lives in lib.js.
+// Wrapped in an IIFE so its names don't clash with app.js globals.
+(() => {
 let accounts = [];
 let selectedView = 'value-chart'; // 'table' | 'chart' | 'value-chart'
 let selectedMonths = 3;
+let loadToken = 0; // ignores out-of-date responses when clicking quickly
 
-initProtectedPage(loadAccounts);
+watchSession({ signedIn: loadAccounts, signedOut: () => {} });
 
-// ---------- Accounts dropdown ----------
+// ---------- Account buttons ----------
+// Same investment accounts as the investments page performance chart, plus a
+// 'Total' that combines them all.
+
+const TOTAL_KEY = '__total__';
+let selectedKey = TOTAL_KEY;
 
 async function loadAccounts() {
   const { data, error } = await sb.from('accounts').select('*').order('type').order('name');
   if (failed('Failed to load accounts', error)) return;
-  accounts = data || [];
-
-  const select = document.getElementById('account-select');
-  select.innerHTML = '<option value="">Select an account&hellip;</option>';
-  const types = ['ISA', 'Pension', 'Savings'];
-  for (const type of types) {
-    const list = accounts.filter(a => a.type === type);
-    if (list.length === 0) continue;
-    const group = document.createElement('optgroup');
-    group.label = type;
-    for (const acc of list) {
-      const opt = document.createElement('option');
-      opt.value = acc.id;
-      opt.textContent = acc.name;
-      group.appendChild(opt);
-    }
-    select.appendChild(group);
-  }
+  accounts = (data || []).filter(a => a.type === 'ISA' || a.type === 'Pension');
+  renderAccountButtons();
+  refreshView();
 }
 
-document.getElementById('account-select').addEventListener('change', () => {
+function renderAccountButtons() {
+  const legend = document.getElementById('account-legend');
+  const items = [{ key: TOTAL_KEY, label: 'Total', color: 'var(--series-total)' }]
+    .concat(accounts.map(a => ({ key: a.id, label: a.name, color: seriesColor(accounts.indexOf(a)) })));
+  legend.innerHTML = items.map(s => {
+    const on = s.key === selectedKey;
+    return `<button type="button" class="item${on ? '' : ' off'}" data-key="${escapeHtml(String(s.key))}" aria-pressed="${on}">
+      <span class="swatch" style="background:${s.color}"></span>${escapeHtml(s.label)}
+    </button>`;
+  }).join('');
+  legend.querySelectorAll('.item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedKey = btn.dataset.key;
+      legend.querySelectorAll('.item').forEach(b => {
+        const on = b.dataset.key === selectedKey;
+        b.classList.toggle('off', !on);
+        b.setAttribute('aria-pressed', on);
+      });
+      refreshView();
+    });
+  });
+}
+
+function refreshView() {
   if (selectedView === 'chart') loadChart();
   else if (selectedView === 'value-chart') loadValueChart();
   else if (selectedView === 'table' && selectedMonths) loadHistory();
-});
+}
+
+function seriesColor(i) {
+  return getComputedStyle(document.documentElement).getPropertyValue(`--series-${(i % 8) + 1}`).trim();
+}
+
+function selectedAccounts() {
+  return selectedKey === TOTAL_KEY ? accounts : accounts.filter(a => a.id === selectedKey);
+}
+
+// Fetch entries (date asc) for the selected account(s). For Total, each
+// account's last known value is carried forward and summed on every date any
+// account was updated; contributions made on a date are summed.
+async function fetchEntries(fromStr, withContribution) {
+  const accs = selectedAccounts();
+  if (accs.length === 0) return { data: [], error: null };
+  const cols = withContribution ? 'account_id, date, value, contribution' : 'account_id, date, value';
+  const { data, error } = await sb.from('investment_values')
+    .select(cols)
+    .in('account_id', accs.map(a => a.id))
+    .gte('date', fromStr)
+    .order('date', { ascending: true });
+  if (error) return { data: null, error };
+  if (accs.length === 1) return { data: data || [], error: null };
+
+  const rows = data || [];
+  // Seed each account with its last value before the window so the first
+  // totals are not understated.
+  const seeds = await Promise.all(accs.map(a => sb.from('investment_values')
+    .select('account_id, date, value')
+    .eq('account_id', a.id).lt('date', fromStr)
+    .order('date', { ascending: false }).limit(1)));
+  const last = {};
+  for (const s of seeds) if (s.data && s.data[0]) last[s.data[0].account_id] = Number(s.data[0].value);
+
+  const dates = [...new Set(rows.map(r => r.date))].sort();
+  const out = [];
+  for (const d of dates) {
+    let contribution = null;
+    for (const r of rows) {
+      if (r.date !== d) continue;
+      last[r.account_id] = Number(r.value);
+      if (r.contribution != null) contribution = (contribution || 0) + Number(r.contribution);
+    }
+    out.push({ date: d, value: Object.values(last).reduce((s, v) => s + v, 0), contribution });
+  }
+  return { data: out, error: null };
+}
 
 // ---------- Period / Chart tabs ----------
 
@@ -61,36 +123,25 @@ document.querySelectorAll('#period-tabs .tab-btn').forEach(btn => {
 // ---------- History table ----------
 
 async function loadHistory() {
-  const accountId = document.getElementById('account-select').value;
   const empty = document.getElementById('history-empty');
   const table = document.getElementById('history-table');
   const rows = document.getElementById('history-rows');
   const contributionTh = document.getElementById('history-contribution-th');
 
-  document.getElementById('history-chart-section').classList.add('hidden');
-
-  if (!accountId) {
-    empty.textContent = 'Select an account to see its history.';
-    empty.classList.remove('hidden');
-    table.classList.add('hidden');
-    return;
-  }
-
-  const account = accounts.find(a => a.id === accountId);
-  const showContribution = account && (account.type === 'ISA' || account.type === 'Pension');
+  const showContribution = true;
   contributionTh.classList.toggle('hidden', !showContribution);
 
   const today = new Date();
   const from = new Date(today.getFullYear(), today.getMonth() - selectedMonths, today.getDate());
   const fromStr = toISODate(from);
 
-  const { data, error } = await sb.from('investment_values')
-    .select('date, value, contribution')
-    .eq('account_id', accountId)
-    .gte('date', fromStr)
-    .order('date', { ascending: false });
-  if (failed('Failed to load history', error)) return;
+  const token = ++loadToken;
+  const res = await fetchEntries(fromStr, true);
+  if (token !== loadToken) return;
+  if (failed('Failed to load history', res.error)) return;
+  const data = (res.data || []).slice().reverse();
 
+  document.getElementById('history-chart-section').classList.add('hidden');
   if (!data || data.length === 0) {
     empty.textContent = 'No values recorded for this account in the selected period.';
     empty.classList.remove('hidden');
@@ -148,36 +199,27 @@ function computeAnnualGrowthSeries(entries, windowStartStr, todayStr) {
 }
 
 async function loadChart() {
-  const accountId = document.getElementById('account-select').value;
   const empty = document.getElementById('history-empty');
   const table = document.getElementById('history-table');
   const chartSection = document.getElementById('history-chart-section');
   const currentLabel = document.getElementById('history-chart-current');
 
-  table.classList.add('hidden');
-  chartSection.classList.add('hidden');
-  currentLabel.textContent = '';
-
-  if (!accountId) {
-    empty.textContent = 'Select an account to see its history.';
-    empty.classList.remove('hidden');
-    return;
-  }
-
   const today = new Date();
   const windowStart = new Date(today.getFullYear(), today.getMonth() - 3, today.getDate());
   const fetchFrom = new Date(windowStart.getFullYear() - 1, windowStart.getMonth(), windowStart.getDate());
 
-  const { data, error } = await sb.from('investment_values')
-    .select('date, value, contribution')
-    .eq('account_id', accountId)
-    .gte('date', toISODate(fetchFrom))
-    .order('date', { ascending: true });
-  if (failed('Failed to load history', error)) return;
+  const token = ++loadToken;
+  const res = await fetchEntries(toISODate(fetchFrom), true);
+  if (token !== loadToken) return;
+  if (failed('Failed to load history', res.error)) return;
+  const data = res.data;
 
   const points = computeAnnualGrowthSeries(data || [], toISODate(windowStart), toISODate(today));
 
+  table.classList.add('hidden');
   if (points.length === 0) {
+    chartSection.classList.add('hidden');
+    currentLabel.textContent = '';
     empty.textContent = 'Not enough history for this account to show annual growth — needs at least 12 months of prior values.';
     empty.classList.remove('hidden');
     return;
@@ -196,33 +238,24 @@ async function loadChart() {
 // ---------- Chart: account value over the selected period ----------
 
 async function loadValueChart() {
-  const accountId = document.getElementById('account-select').value;
   const empty = document.getElementById('history-empty');
   const table = document.getElementById('history-table');
   const chartSection = document.getElementById('history-chart-section');
   const currentLabel = document.getElementById('history-chart-current');
 
-  table.classList.add('hidden');
-  chartSection.classList.add('hidden');
-  currentLabel.textContent = '';
-
-  if (!accountId) {
-    empty.textContent = 'Select an account to see its history.';
-    empty.classList.remove('hidden');
-    return;
-  }
-
   const today = new Date();
   const from = new Date(today.getFullYear(), today.getMonth() - selectedMonths, today.getDate());
 
-  const { data, error } = await sb.from('investment_values')
-    .select('date, value')
-    .eq('account_id', accountId)
-    .gte('date', toISODate(from))
-    .order('date', { ascending: true });
-  if (failed('Failed to load history', error)) return;
+  const token = ++loadToken;
+  const res = await fetchEntries(toISODate(from), false);
+  if (token !== loadToken) return;
+  if (failed('Failed to load history', res.error)) return;
+  const data = res.data;
 
+  table.classList.add('hidden');
   if (!data || data.length === 0) {
+    chartSection.classList.add('hidden');
+    currentLabel.textContent = '';
     empty.textContent = `No values recorded for this account in the last ${selectedMonths} months.`;
     empty.classList.remove('hidden');
     return;
@@ -308,3 +341,5 @@ function buildHistoryChartSvg(points, opts) {
 
   return `${gridLines.join('')}${area}${line}${dots}${dateLabels.join('')}`;
 }
+
+})();
