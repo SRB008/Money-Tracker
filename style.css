@@ -690,6 +690,20 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
   .share-price-input { width: 56px; }
   .expense-running-total { width: 74px; font-size: 13px; }
   .expense-list-header { font-size: 10px; }
+
+  /* Shares: hide code, drop the price update onto its own line */
+  .shares-header .expense-date,
+  .shares-header .share-price-update,
+  .share-row .expense-date { display: none; }
+  .share-row .expense-row-main { flex-wrap: wrap; row-gap: 8px; }
+  .share-row .expense-name { min-width: 0; overflow-wrap: anywhere; }
+  .share-row .share-price-update {
+    order: 1;
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+  .share-row .share-price-input { width: 96px; min-height: 40px; font-size: 16px; }
+  .share-row .share-price-save { min-height: 40px; padding: 5px 16px; }
   .month-nav button { padding: 6px 10px; }
   .month-actions { flex-wrap: wrap; }
   .debt-value-header span:not(.debt-value-header-name) { width: 66px; }

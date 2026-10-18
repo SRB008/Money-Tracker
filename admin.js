@@ -388,7 +388,7 @@ function renderShares() {
   for (const share of shares) {
     const price = share.price != null ? Number(share.price) : null;
     const row = document.createElement('div');
-    row.className = 'expense-row';
+    row.className = 'expense-row share-row';
     row.innerHTML = `
       <div class="expense-row-main">
         <span class="expense-date">${escapeHtml(share.trading_code)}</span>
