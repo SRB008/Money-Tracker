@@ -7,24 +7,22 @@ initProtectedPage(loadAll);
 document.getElementById('tax-date').valueAsDate = new Date();
 
 async function loadAll() {
-  const [t, a, s, o] = await Promise.all([
+  const [t, a, s] = await Promise.all([
     sb.from('tax_records').select('*').order('tax_date', { ascending: false }).order('created_at', { ascending: false }),
     sb.from('accounts').select('name').order('name'),
     sb.from('shares').select('title, trading_code').order('title'),
-    sb.from('other_assets').select('title').order('title'),
   ]);
   if (failed('Failed to load tax records', t.error) || failed('Failed to load accounts', a.error)
-    || failed('Failed to load shares', s.error) || failed('Failed to load other assets', o.error)) return;
+    || failed('Failed to load shares', s.error)) return;
   taxRecords = t.data || [];
   renderSources(
     (a.data || []).map(x => x.name),
     (s.data || []).map(x => x.trading_code ? `${x.title} (${x.trading_code})` : x.title),
-    (o.data || []).map(x => x.title),
   );
   renderTable();
 }
 
-function renderSources(accounts, shares, others) {
+function renderSources(accounts, shares) {
   const sel = document.getElementById('tax-source');
   const current = sel.value;
   const group = (label, names) => {
@@ -34,12 +32,14 @@ function renderSources(accounts, shares, others) {
       : '';
   };
   sel.innerHTML = '<option value="" disabled selected>Select source…</option>'
-    + group('Accounts', accounts) + group('Shares', shares) + group('Other assets', others);
+    + group('Accounts', accounts) + group('Shares', shares)
+    + '<option value="Unlisted">Unlisted</option>';
   if (current) sel.value = current;
   document.getElementById('edit-source').innerHTML = sel.innerHTML;
 }
 
 const PENCIL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>';
+const BIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>';
 const NOTE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>';
 
 let sortKey = 'tax_date';
@@ -87,11 +87,11 @@ function renderTable() {
       <td class="value">${fmtGBP(r.gross_amount)}</td>
       <td>${escapeHtml(r.source)}</td>
       <td>${escapeHtml(r.type)}</td>
-      <td>${r.live ? 'Yes' : 'No'}</td>
+      <td>${r.tax_voucher ? 'Yes' : 'No'}</td>
       <td>${r.notes && r.notes.trim() ? `<button type="button" class="note-icon" data-note-id="${r.id}" title="${escapeHtml(r.notes)}" aria-label="Show note" style="padding:2px 4px;border:0;background:none;cursor:pointer;color:inherit">${NOTE_SVG}</button>` : ''}</td>
       <td class="actions">
         <button type="button" data-edit-id="${r.id}" title="Edit" aria-label="Edit">${PENCIL_SVG}</button>
-        <button type="button" data-id="${r.id}">Delete</button>
+        <button type="button" data-id="${r.id}" title="Delete" aria-label="Delete" style="background:#fff;color:#d03b3b">${BIN_SVG}</button>
       </td>
     </tr>`).join('');
 }
@@ -104,7 +104,7 @@ onSubmit(document.getElementById('tax-form'), async () => {
     gross_amount: amount,
     source: document.getElementById('tax-source').value,
     type: document.getElementById('tax-type').value.trim(),
-    live: document.getElementById('tax-live').checked,
+    tax_voucher: document.getElementById('tax-voucher').checked,
     notes: document.getElementById('tax-notes').value.trim() || null,
   };
   const { error } = await sb.from('tax_records').insert(row);
@@ -130,7 +130,7 @@ function openEdit(rec) {
   document.getElementById('edit-amount').value = rec.gross_amount;
   src.value = rec.source;
   document.getElementById('edit-type').value = rec.type;
-  document.getElementById('edit-live').checked = rec.live;
+  document.getElementById('edit-voucher').checked = rec.tax_voucher;
   document.getElementById('edit-notes').value = rec.notes || '';
   taxModal.classList.remove('hidden');
 }
@@ -147,7 +147,7 @@ onSubmit(document.getElementById('tax-edit-form'), async () => {
     gross_amount: amount,
     source: document.getElementById('edit-source').value,
     type: document.getElementById('edit-type').value,
-    live: document.getElementById('edit-live').checked,
+    tax_voucher: document.getElementById('edit-voucher').checked,
     notes: document.getElementById('edit-notes').value.trim() || null,
   };
   const { error } = await sb.from('tax_records').update(row).eq('id', editingId);
