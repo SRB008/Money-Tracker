@@ -50,8 +50,9 @@
           <option value="Other">Other</option>
         </select>
       </div>
-      <div class="field">
-        <label for="tax-live"><input id="tax-live" type="checkbox" checked> Live</label>
+      <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+        <input id="tax-live" type="checkbox" checked style="width:auto;margin:0">
+        <label for="tax-live" style="margin:0">Live</label>
       </div>
       <div class="field">
         <label for="tax-notes">Notes</label>
@@ -65,13 +66,19 @@
     <div class="card-header">
       <h2>Tax records</h2>
     </div>
+    <nav class="tabs" id="type-filter" style="margin-bottom:12px">
+      <button type="button" class="tab-btn active" data-filter="All">All</button>
+      <button type="button" class="tab-btn" data-filter="Dividends">Dividends</button>
+      <button type="button" class="tab-btn" data-filter="Savings Interest">Savings Interest</button>
+      <button type="button" class="tab-btn" data-filter="Other">Other</button>
+    </nav>
     <div style="overflow-x:auto">
       <table id="tax-table">
         <thead>
           <tr>
-            <th>Tax date</th>
+            <th class="sortable" data-sort="tax_date" style="cursor:pointer;user-select:none">Tax date <span class="sort-ind"></span></th>
             <th class="value">Gross amount</th>
-            <th>Source</th>
+            <th class="sortable" data-sort="source" style="cursor:pointer;user-select:none">Source <span class="sort-ind"></span></th>
             <th>Type</th>
             <th>Live</th>
             <th>Notes</th>
@@ -79,10 +86,57 @@
           </tr>
         </thead>
         <tbody id="tax-body"></tbody>
+        <tfoot>
+          <tr>
+            <th>Total</th>
+            <th class="value" id="tax-total"></th>
+            <th colspan="5"></th>
+          </tr>
+        </tfoot>
       </table>
     </div>
   </div>
 
+</div>
+
+<div id="tax-modal" class="modal-overlay hidden">
+  <div class="modal card">
+    <h2>Edit tax record</h2>
+    <form id="tax-edit-form">
+      <div class="field">
+        <label for="edit-date">Tax date</label>
+        <input id="edit-date" type="date" required>
+      </div>
+      <div class="field">
+        <label for="edit-amount">Gross amount (£)</label>
+        <input id="edit-amount" type="number" step="0.01" required>
+      </div>
+      <div class="field">
+        <label for="edit-source">Source</label>
+        <select id="edit-source" required></select>
+      </div>
+      <div class="field">
+        <label for="edit-type">Type</label>
+        <select id="edit-type" required>
+          <option value="Savings Interest">Savings Interest</option>
+          <option value="Dividends">Dividends</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+        <input id="edit-live" type="checkbox" style="width:auto;margin:0">
+        <label for="edit-live" style="margin:0">Live</label>
+      </div>
+      <div class="field">
+        <label for="edit-notes">Notes</label>
+        <input id="edit-notes" type="text">
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="tax-modal-cancel">Cancel</button>
+        <button type="submit" class="primary">Save changes</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <script>
@@ -98,6 +152,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous" onerror="showFatal('Failed to load the Supabase library from cdn.jsdelivr.net — check your internet connection or whether an ad/script blocker is active.')"></script>
 <script src="config.js" onerror="showFatal('Failed to load config.js')"></script>
 <script src="lib.js?v=4" onerror="showFatal('Failed to load lib.js')"></script>
-<script src="tax.js?v=3" onerror="showFatal('Failed to load tax.js')"></script>
+<script src="tax.js?v=6" onerror="showFatal('Failed to load tax.js')"></script>
 </body>
 </html>
